@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -30,32 +30,16 @@ class OutreachCampaign(Base):
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     channel: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(50), default=CampaignStatus.draft.value
-    )
+    status: Mapped[str] = mapped_column(String(50), default=CampaignStatus.draft.value)
     language: Mapped[str] = mapped_column(String(10), default="ru")
     created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    scheduled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    messages = relationship(
-        "OutreachMessage",
-        back_populates="campaign",
-        order_by="OutreachMessage.created_at.desc()",
-    )
+    messages = relationship("OutreachMessage", back_populates="campaign", order_by="OutreachMessage.created_at.desc()")
 
 
 class MessageStatus(str, enum.Enum):
@@ -63,11 +47,13 @@ class MessageStatus(str, enum.Enum):
     needs_review = "needs_review"
     approved = "approved"
     queued = "queued"
+    retrying = "retrying"
     sent = "sent"
     delivered = "delivered"
     read = "read"
     replied = "replied"
     failed = "failed"
+    dead_letter = "dead_letter"
     cancelled = "cancelled"
     blocked = "blocked"
 
@@ -75,61 +61,37 @@ class MessageStatus(str, enum.Enum):
 class OutreachMessage(Base):
     __tablename__ = "outreach_messages"
     __table_args__ = (
-        UniqueConstraint(
-            "lead_id", "channel", "campaign_id",
-            name="uq_outreach_first_contact",
-        ),
+        UniqueConstraint("lead_id", "channel", "campaign_id", name="uq_outreach_first_contact"),
     )
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    campaign_id: Mapped[str] = mapped_column(
-        String(50), ForeignKey("outreach_campaigns.id"), nullable=False
-    )
-    lead_id: Mapped[int] = mapped_column(
-        ForeignKey("leads.id"), nullable=False
-    )
+    campaign_id: Mapped[str] = mapped_column(String(50), ForeignKey("outreach_campaigns.id"), nullable=False)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id"), nullable=False)
     channel: Mapped[str] = mapped_column(String(50), nullable=False)
     recipient: Mapped[str] = mapped_column(String(500), nullable=False)
     subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
     body: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(50), default=MessageStatus.draft.value
-    )
-    provider_message_id: Mapped[str | None] = mapped_column(
-        String(200), nullable=True
-    )
+    status: Mapped[str] = mapped_column(String(50), default=MessageStatus.draft.value)
+    provider_message_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    template_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    template_language: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    is_template: Mapped[bool] = mapped_column(Boolean, default=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False)
     approved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    approved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    delivered_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    read_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    replied_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    failed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     follow_up_number: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     campaign = relationship("OutreachCampaign", back_populates="messages")
     lead = relationship("Lead", foreign_keys=[lead_id])
-    events = relationship(
-        "OutreachEvent",
-        back_populates="message",
-        order_by="OutreachEvent.created_at.desc()",
-    )
+    events = relationship("OutreachEvent", back_populates="message", order_by="OutreachEvent.created_at.desc()")
