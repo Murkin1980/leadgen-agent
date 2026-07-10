@@ -1,0 +1,9 @@
+source_id,name,category,city,address,phone,website,instagram,rating,reviews_count,source_url,latitude,longitude
+csv_001,Алматы Мебель,Мебель на заказ,Алматы,ул. Тулебаева 42,+77001112233,,@almaty_mebel,4.6,89,https://2gis.kz/almaty/firm/csv_001,43.2400,76.9450
+csv_002,Кухни Плюс,Мебель на заказ,Алматы,пр. Сейфуллина 520,+77003334455,https://kuhni-plus.kz,@kuhni_plus,4.3,56,https://2gis.kz/almaty/firm/csv_002,43.2350,76.9400
+csv_003,Шкаф Мастер,Мебель на заказ,Алматы,ул. Курмангазы 68,+77005556677,,@shkaf_master,4.8,142,https://2gis.kz/almaty/firm/csv_003,43.2500,76.9550
+csv_004,Офис Мебель,Офисная мебель,Алматы,ул. Достык 110,+77007778899,https://office-mebel.kz,,4.1,28,https://2gis.kz/almaty/firm/csv_004,43.2320,76.9350
+csv_005,Дерево Мастер,Мебель на заказ,Алматы,ул. Абая 152,+77009990011,,@derevo_master,4.7,167,https://2gis.kz/almaty/firm/csv_005,43.2280,76.9420
+csv_006,Мебель Сити,Мебель на заказ,Алматы,пр. Достык 78,+77001223344,https://mebel-city.kz,@mebel_city,4.4,73,https://2gis.kz/almaty/firm/csv_006,43.2450,76.9500
+csv_007,Столярка,Мебель на заказ,Астана,ул. Кенесары 40,+71002223344,,@stolyarka,4.5,95,https://2gis.kz/astana/firm/csv_007,51.1280,71.4300
+csv_008,Мебель Астана,Мебель на заказ,Астана,пр. Мәңгілік Ел 62,+71003334455,https://mebel-astana.kz,@mebel_astana,4.2,48,https://2gis.kz/astana/firm/csv_008,51.1300,71.4350

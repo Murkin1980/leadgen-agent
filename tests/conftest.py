@@ -6,6 +6,8 @@ os.environ["TEXT_GENERATOR_PROVIDER"] = "template"
 os.environ["PUBLIC_BASE_URL"] = "http://localhost:8080"
 os.environ["DEPLOYMENT_PROVIDER"] = "mock"
 os.environ["COLLECTOR_PROVIDER"] = "mock"
+os.environ["VERIFICATION_ENABLED"] = "false"
+os.environ["LEAD_MIN_SCORE"] = "50"
 
 import pytest
 from sqlalchemy import create_engine

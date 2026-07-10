@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 class CollectorAdapter(Protocol):
     def search(
         self,
+        *,
         city: str,
         category: str,
         limit: int,
@@ -16,8 +17,9 @@ class CollectorAdapter(Protocol):
 
     def search_page(
         self,
+        *,
         city: str,
         category: str,
-        page: int,
-        page_size: int,
+        page: int = 1,
+        page_size: int = 20,
     ) -> CollectedPage: ...

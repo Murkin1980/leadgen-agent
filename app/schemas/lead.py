@@ -24,6 +24,10 @@ class LeadResponse(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     has_website: bool = False
+    provider: str | None = None
+    website_check_status: str = "pending"
+    qualification_score: int = 0
+    qualification_reasons: str | None = None
     status: str
     created_at: datetime | None = None
     updated_at: datetime | None = None

@@ -7,13 +7,13 @@ from app.enrichment.enricher import enrich_lead
 class TestFilteringLogic:
     def test_no_website_companies_eligible(self):
         adapter = MockCollectorAdapter()
-        companies = adapter.search("Алматы", "мебель на заказ", 100)
+        companies = adapter.search(city="Алматы", category="мебель на заказ", limit=100)
         eligible = [c for c in companies if not c.website and c.phone and c.name.strip()]
         assert len(eligible) > 0
 
     def test_with_website_companies_excluded(self):
         adapter = MockCollectorAdapter()
-        companies = adapter.search("Алматы", "мебель на заказ", 100)
+        companies = adapter.search(city="Алматы", category="мебель на заказ", limit=100)
         with_website = [c for c in companies if c.website]
         assert len(with_website) > 0
         for c in with_website:
@@ -21,7 +21,7 @@ class TestFilteringLogic:
 
     def test_all_companies_have_source_id(self):
         adapter = MockCollectorAdapter()
-        companies = adapter.search("Алматы", "мебель на заказ", 100)
+        companies = adapter.search(city="Алматы", category="мебель на заказ", limit=100)
         source_ids = set()
         for c in companies:
             assert c.source_id

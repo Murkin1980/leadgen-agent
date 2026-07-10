@@ -19,6 +19,28 @@ class Settings(BaseSettings):
 
     collector_provider: str = "mock"
 
+    two_gis_api_key: str = ""
+    two_gis_api_url: str = "https://catalog.api.2gis.com/3.0/items"
+    two_gis_city_id: str = ""
+    two_gis_page_size: int = 20
+    two_gis_max_retries: int = 3
+    two_gis_retry_delay: float = 1.0
+
+    csv_file_path: str = "import/companies.csv"
+    csv_page_size: int = 20
+
+    verification_enabled: bool = True
+    verification_timeout: float = 5.0
+    verification_max_redirects: int = 3
+    verification_user_agent: str = "LeadGenBot/1.0"
+
+    lead_min_score: int = 50
+    lead_score_phone: int = 20
+    lead_score_website: int = -30
+    lead_score_instagram: int = 15
+    lead_score_rating: int = 20
+    lead_score_reviews: int = 15
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

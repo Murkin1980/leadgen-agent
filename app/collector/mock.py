@@ -97,14 +97,16 @@ MOCK_COMPANIES: list[dict] = [
 class MockCollectorAdapter:
     def search(
         self,
+        *,
         city: str,
         category: str,
         limit: int,
     ) -> list[CollectedCompany]:
-        return self.search_page(city, category, page=1, page_size=limit).items
+        return self.search_page(city=city, category=category, page=1, page_size=limit).items
 
     def search_page(
         self,
+        *,
         city: str,
         category: str,
         page: int = 1,
@@ -118,5 +120,6 @@ class MockCollectorAdapter:
             page=page,
             page_size=page_size,
             has_more=end < len(MOCK_COMPANIES),
+            total=len(MOCK_COMPANIES),
             provider_metadata={"total": len(MOCK_COMPANIES)},
         )

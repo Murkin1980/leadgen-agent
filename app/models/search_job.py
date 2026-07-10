@@ -15,6 +15,7 @@ class JobStatus(str, enum.Enum):
     publishing = "publishing"
     completed = "completed"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class SearchJob(Base):
@@ -24,11 +25,14 @@ class SearchJob(Base):
     city: Mapped[str] = mapped_column(String(200), nullable=False)
     category: Mapped[str] = mapped_column(String(500), nullable=False)
     limit: Mapped[int] = mapped_column(Integer, default=20)
+    provider: Mapped[str] = mapped_column(String(50), default="mock")
     status: Mapped[str] = mapped_column(
         String(50), default=JobStatus.pending.value
     )
     found_count: Mapped[int] = mapped_column(Integer, default=0)
     accepted_count: Mapped[int] = mapped_column(Integer, default=0)
+    current_page: Mapped[int] = mapped_column(Integer, default=0)
+    processed_count: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

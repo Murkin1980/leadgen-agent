@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -15,6 +15,13 @@ class LeadStatus(str, enum.Enum):
     failed = "failed"
 
 
+class WebsiteCheckStatus(str, enum.Enum):
+    pending = "pending"
+    ok = "ok"
+    unreachable = "unreachable"
+    has_website = "has_website"
+
+
 class Lead(Base):
     __tablename__ = "leads"
     __table_args__ = (
@@ -25,6 +32,7 @@ class Lead(Base):
     search_job_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("search_jobs.id"), nullable=True
     )
+    provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     slug: Mapped[str | None] = mapped_column(String(500), nullable=True)
     category: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -44,6 +52,11 @@ class Lead(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     has_website: Mapped[bool] = mapped_column(default=False)
+    website_check_status: Mapped[str] = mapped_column(
+        String(50), default=WebsiteCheckStatus.pending.value
+    )
+    qualification_score: Mapped[int] = mapped_column(Integer, default=0)
+    qualification_reasons: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(50), default=LeadStatus.collected.value
     )

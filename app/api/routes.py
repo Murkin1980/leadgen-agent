@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.deployment import Deployment, DeploymentStatus
 from app.models.landing_page import LandingPage, LandingStatus
@@ -42,12 +43,23 @@ def health_check():
     return {"status": status, "postgres": pg_ok, "redis": redis_ok}
 
 
+@router.get("/providers")
+def list_providers():
+    """List available collector providers."""
+    from app.collector.factory import get_available_providers
+    return {
+        "providers": get_available_providers(),
+        "current": settings.collector_provider,
+    }
+
+
 @router.post("/jobs", response_model=JobResponse)
 def create_job(payload: JobCreate, db: Session = Depends(get_db)):
     job = SearchJob(
         city=payload.city,
         category=payload.category,
         limit=payload.limit,
+        provider=payload.provider,
         status=JobStatus.pending.value,
     )
     db.add(job)
@@ -57,7 +69,11 @@ def create_job(payload: JobCreate, db: Session = Depends(get_db)):
     from rq import Queue
 
     q = Queue("collect", connection=redis_conn)
-    q.enqueue("app.workers.collector_worker.run_collector", job.id)
+    q.enqueue(
+        "app.workers.collector_worker.run_collector",
+        job.id,
+        payload.provider,
+    )
 
     return job
 
@@ -70,12 +86,64 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     return job
 
 
+@router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
+def cancel_job(job_id: int, db: Session = Depends(get_db)):
+    """Cancel a running job."""
+    job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status not in (JobStatus.pending.value, JobStatus.collecting.value):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel job in status: {job.status}"
+        )
+
+    job.status = JobStatus.cancelled.value
+    db.commit()
+    db.refresh(job)
+
+    return job
+
+
+@router.post("/jobs/{job_id}/retry", response_model=JobResponse)
+def retry_job(job_id: int, db: Session = Depends(get_db)):
+    """Retry a failed job."""
+    job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != JobStatus.failed.value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Can only retry failed jobs, current status: {job.status}"
+        )
+
+    job.status = JobStatus.pending.value
+    job.error_message = None
+    job.current_page = 0
+    job.processed_count = 0
+    db.commit()
+
+    from rq import Queue
+
+    q = Queue("collect", connection=redis_conn)
+    q.enqueue(
+        "app.workers.collector_worker.run_collector",
+        job.id,
+        job.provider,
+    )
+
+    return job
+
+
 @router.get("/leads", response_model=list[LeadResponse])
 def list_leads(
     city: str | None = None,
     category: str | None = None,
     status: str | None = None,
     has_website: bool | None = None,
+    provider: str | None = None,
     search_job_id: int | None = None,
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0, ge=0),
@@ -90,6 +158,8 @@ def list_leads(
         q = q.filter(Lead.status == status)
     if has_website is not None:
         q = q.filter(Lead.has_website == has_website)
+    if provider:
+        q = q.filter(Lead.provider == provider)
     if search_job_id is not None:
         q = q.filter(Lead.search_job_id == search_job_id)
     return q.order_by(Lead.id.desc()).offset(offset).limit(limit).all()
