@@ -102,6 +102,21 @@ services:
       - ./sites:/app/sites
     restart: unless-stopped
 
+  deployer:
+    build:
+      context: .
+      dockerfile: Dockerfile.deployer
+    env_file: .env
+    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "deploy"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./sites:/app/sites
+    restart: unless-stopped
+
   preview:
     image: nginx:alpine
     ports:

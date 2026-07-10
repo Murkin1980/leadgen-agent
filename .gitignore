@@ -9,4 +9,3 @@ build/
 sites/drafts/
 node_modules/
 .wrangler/
-package-lock.json

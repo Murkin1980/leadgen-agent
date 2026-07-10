@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.deployment import Deployment, DeploymentStatus
 from app.models.landing_page import LandingPage, LandingStatus
 from app.models.lead import Lead, LeadStatus
 from app.models.search_job import SearchJob, JobStatus
 from app.publisher.publisher import publish_site, validate_slug
+from app.schemas.deployment import DeploymentResponse
 from app.schemas.job import JobCreate, JobResponse
 from app.schemas.lead import LeadResponse
 from app.schemas.landing import LandingResponse
@@ -74,6 +76,7 @@ def list_leads(
     category: str | None = None,
     status: str | None = None,
     has_website: bool | None = None,
+    search_job_id: int | None = None,
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -87,6 +90,8 @@ def list_leads(
         q = q.filter(Lead.status == status)
     if has_website is not None:
         q = q.filter(Lead.has_website == has_website)
+    if search_job_id is not None:
+        q = q.filter(Lead.search_job_id == search_job_id)
     return q.order_by(Lead.id.desc()).offset(offset).limit(limit).all()
 
 
@@ -129,7 +134,7 @@ def generate_landing(lead_id: int, db: Session = Depends(get_db)):
     q.enqueue(
         "app.workers.publisher_worker.run_publisher",
         [landing_id],
-        0,
+        lead.search_job_id or 0,
     )
 
     return landing
@@ -172,7 +177,7 @@ def publish_landing(landing_id: str, db: Session = Depends(get_db)):
     return landing
 
 
-@router.post("/jobs/{job_id}/deploy")
+@router.post("/jobs/{job_id}/deploy", response_model=DeploymentResponse)
 def deploy_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
     if not job:
@@ -180,18 +185,75 @@ def deploy_job(job_id: int, db: Session = Depends(get_db)):
 
     published = (
         db.query(LandingPage)
-        .filter(LandingPage.status == LandingStatus.published.value)
+        .join(LandingPage.lead)
+        .filter(
+            LandingPage.status == LandingStatus.published.value,
+            Lead.search_job_id == job_id,
+        )
         .count()
     )
     if published == 0:
         raise HTTPException(
             status_code=400,
-            detail="No published landings to deploy",
+            detail="No published landings to deploy for this job",
         )
+
+    active = (
+        db.query(Deployment)
+        .filter(
+            Deployment.job_id == job_id,
+            Deployment.status.in_([
+                DeploymentStatus.queued.value,
+                DeploymentStatus.running.value,
+            ]),
+        )
+        .count()
+    )
+    if active > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="An active deployment already exists for this job",
+        )
+
+    deployment = Deployment(
+        id=str(uuid.uuid4())[:12],
+        job_id=job_id,
+        provider=settings.deployment_provider,
+        project_name=settings.cloudflare_pages_project,
+        branch=settings.cloudflare_pages_branch,
+        status=DeploymentStatus.queued.value,
+    )
+    db.add(deployment)
+    db.commit()
+    db.refresh(deployment)
 
     from rq import Queue
 
-    q = Queue("publish", connection=redis_conn)
-    q.enqueue("app.workers.deployer_worker.run_deployer", job_id)
+    q = Queue("deploy", connection=redis_conn)
+    q.enqueue("app.workers.deployer_worker.run_deployer", deployment.id)
 
-    return {"status": "deploying", "job_id": job_id, "landings_to_deploy": published}
+    return deployment
+
+
+@router.get("/deployments/{deployment_id}", response_model=DeploymentResponse)
+def get_deployment(deployment_id: str, db: Session = Depends(get_db)):
+    deployment = db.query(Deployment).filter(Deployment.id == deployment_id).first()
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return deployment
+
+
+@router.get("/deployments", response_model=list[DeploymentResponse])
+def list_deployments(
+    job_id: int | None = None,
+    status: str | None = None,
+    limit: int = Query(default=20, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Deployment)
+    if job_id is not None:
+        q = q.filter(Deployment.job_id == job_id)
+    if status:
+        q = q.filter(Deployment.status == status)
+    return q.order_by(Deployment.created_at.desc()).offset(offset).limit(limit).all()

@@ -4,6 +4,8 @@ os.environ["DATABASE_URL"] = "sqlite:///test.db"
 os.environ["REDIS_URL"] = "redis://localhost:6379/15"
 os.environ["TEXT_GENERATOR_PROVIDER"] = "template"
 os.environ["PUBLIC_BASE_URL"] = "http://localhost:8080"
+os.environ["DEPLOYMENT_PROVIDER"] = "mock"
+os.environ["COLLECTOR_PROVIDER"] = "mock"
 
 import pytest
 from sqlalchemy import create_engine
@@ -19,7 +21,10 @@ def setup_db():
     yield
     Base.metadata.drop_all(engine)
     engine.dispose()
-    os.remove("test.db")
+    try:
+        os.remove("test.db")
+    except PermissionError:
+        pass
 
 
 @pytest.fixture()

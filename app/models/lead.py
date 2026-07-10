@@ -1,7 +1,7 @@
 import enum
 
-from sqlalchemy import DateTime, Float, Integer, String, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -22,6 +22,9 @@ class Lead(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    search_job_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("search_jobs.id"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     slug: Mapped[str | None] = mapped_column(String(500), nullable=True)
     category: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -50,3 +53,6 @@ class Lead(Base):
     updated_at: Mapped[str] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    job = relationship("SearchJob", back_populates="leads", foreign_keys=[search_job_id])
+    landings = relationship("LandingPage", back_populates="lead", foreign_keys="LandingPage.lead_id")

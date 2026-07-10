@@ -10,6 +10,15 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     public_base_url: str = "http://localhost:8080"
 
+    deployment_provider: str = "mock"
+    cloudflare_api_token: str = ""
+    cloudflare_account_id: str = ""
+    cloudflare_pages_project: str = "leadgen-agent"
+    cloudflare_pages_branch: str = "master"
+    cloudflare_public_url: str = "https://leadgen-agent.pages.dev"
+
+    collector_provider: str = "mock"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

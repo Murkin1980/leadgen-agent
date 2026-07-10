@@ -1,4 +1,4 @@
-from app.collector.base import CollectedCompany
+from app.collector.base import CollectedCompany, CollectedPage
 
 MOCK_COMPANIES: list[dict] = [
     {
@@ -101,9 +101,22 @@ class MockCollectorAdapter:
         category: str,
         limit: int,
     ) -> list[CollectedCompany]:
-        results = []
-        for item in MOCK_COMPANIES:
-            if len(results) >= limit:
-                break
-            results.append(CollectedCompany(**item))
-        return results
+        return self.search_page(city, category, page=1, page_size=limit).items
+
+    def search_page(
+        self,
+        city: str,
+        category: str,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> CollectedPage:
+        start = (page - 1) * page_size
+        end = start + page_size
+        items = [CollectedCompany(**item) for item in MOCK_COMPANIES[start:end]]
+        return CollectedPage(
+            items=items,
+            page=page,
+            page_size=page_size,
+            has_more=end < len(MOCK_COMPANIES),
+            provider_metadata={"total": len(MOCK_COMPANIES)},
+        )
