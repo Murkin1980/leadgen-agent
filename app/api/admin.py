@@ -254,3 +254,131 @@ pre{{background:#f3f4f6;padding:16px;border-radius:8px;overflow-x:auto}}
 <pre>{validation_pretty or 'No validation data'}</pre>
 </body></html>"""
     return HTMLResponse(content=html)
+
+
+# --- Outreach admin pages ---
+
+@admin_router.get("/campaigns", response_class=HTMLResponse)
+def admin_campaigns(request: Request, db: Session = Depends(get_db)):
+    _require_auth(request)
+    from app.models.campaign import OutreachCampaign
+    campaigns = db.query(OutreachCampaign).order_by(OutreachCampaign.created_at.desc()).limit(100).all()
+    rows = ""
+    for c in campaigns:
+        rows += f"""<tr>
+<td>{c.id}</td><td>{c.name}</td><td>{c.channel}</td>
+<td>{c.status}</td><td>{c.language}</td>
+<td><a href="/admin/campaigns/{c.id}">view</a></td>
+</tr>"""
+    html = f"""<!DOCTYPE html>
+<html><head><title>Campaigns</title>
+<style>table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:8px;text-align:left}}
+th{{background:#1f2937;color:#fff}}a{{color:#2563eb}}</style></head><body>
+<h2>Outreach Campaigns</h2>
+<table><tr><th>ID</th><th>Name</th><th>Channel</th><th>Status</th><th>Language</th><th>Actions</th></tr>
+{rows}</table>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@admin_router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)
+def admin_campaign_detail(campaign_id: str, request: Request, db: Session = Depends(get_db)):
+    _require_auth(request)
+    from app.models.campaign import OutreachCampaign, OutreachMessage
+    campaign = db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    messages = db.query(OutreachMessage).filter(
+        OutreachMessage.campaign_id == campaign_id
+    ).order_by(OutreachMessage.created_at.desc()).all()
+    rows = ""
+    for m in messages:
+        body_preview = (m.body[:80] + "...") if len(m.body) > 80 else m.body
+        body_preview = body_preview.replace("<", "&lt;")
+        approve_btn = ""
+        if m.status == "needs_review":
+            approve_btn = f' <a href="/admin/messages/{m.id}/approve">approve</a>'
+        rows += f"""<tr>
+<td>{m.id}</td><td>{m.lead_id}</td><td>{m.channel}</td>
+<td><pre style="margin:0;font-size:12px">{body_preview}</pre></td>
+<td>{m.status}</td><td>{approve_btn}</td>
+</tr>"""
+    html = f"""<!DOCTYPE html>
+<html><head><title>Campaign {campaign_id}</title>
+<style>table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:6px;text-align:left}}
+th{{background:#1f2937;color:#fff}}a{{color:#2563eb}}</style></head><body>
+<h2>Campaign: {campaign.name}</h2>
+<p><b>ID:</b> {campaign.id} | <b>Channel:</b> {campaign.channel} | <b>Status:</b> {campaign.status} | <b>Language:</b> {campaign.language}</p>
+<h3>Messages ({len(messages)})</h3>
+<table><tr><th>ID</th><th>Lead</th><th>Channel</th><th>Body</th><th>Status</th><th>Actions</th></tr>
+{rows}</table>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@admin_router.get("/messages/{message_id}/approve")
+def admin_approve_message(message_id: str, request: Request, db: Session = Depends(get_db)):
+    _require_auth(request)
+    from app.models.campaign import OutreachMessage, MessageStatus
+    from datetime import datetime, timezone
+    msg = db.query(OutreachMessage).filter(OutreachMessage.id == message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    msg.status = MessageStatus.approved.value
+    msg.approved_by = settings.admin_username
+    msg.approved_at = datetime.now(timezone.utc)
+    db.commit()
+    return RedirectResponse(url=f"/admin/campaigns/{msg.campaign_id}", status_code=302)
+
+
+@admin_router.get("/leads/{lead_id}", response_class=HTMLResponse)
+def admin_lead_detail(lead_id: int, request: Request, db: Session = Depends(get_db)):
+    _require_auth(request)
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    from app.models.stage import LeadStageHistory
+    history = db.query(LeadStageHistory).filter(
+        LeadStageHistory.lead_id == lead_id
+    ).order_by(LeadStageHistory.created_at.desc()).all()
+    history_html = ""
+    for h in history:
+        history_html += f"<li>{h.from_stage} → {h.to_stage} by {h.changed_by or 'system'} — {h.reason or ''}</li>"
+    dnc = "YES" if lead.do_not_contact else "No"
+    html = f"""<!DOCTYPE html>
+<html><head><title>Lead {lead_id}</title>
+<style>body{{font-family:system-ui;max-width:800px;margin:20px auto;padding:20px}}
+.box{{background:#f3f4f6;padding:16px;border-radius:8px;margin:12px 0}}</style></head><body>
+<h2>{lead.name}</h2>
+<div class="box">
+<p><b>ID:</b> {lead.id} | <b>City:</b> {lead.city} | <b>Phone:</b> {lead.phone}</p>
+<p><b>Stage:</b> {lead.stage} | <b>Status:</b> {lead.status} | <b>Score:</b> {lead.qualification_score}</p>
+<p><b>Do Not Contact:</b> {dnc} {f'({lead.do_not_contact_reason})' if lead.do_not_contact_reason else ''}</p>
+<p><b>Assigned:</b> {lead.assigned_to or 'n/a'} | <b>Last contacted:</b> {lead.last_contacted_at or 'never'}</p>
+</div>
+<h3>Stage History</h3>
+<ul>{history_html or '<li>No history</li>'}</ul>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@admin_router.get("/do-not-contact", response_class=HTMLResponse)
+def admin_do_not_contact(request: Request, db: Session = Depends(get_db)):
+    _require_auth(request)
+    leads = db.query(Lead).filter(Lead.do_not_contact == True).limit(100).all()
+    rows = ""
+    for l in leads:
+        rows += f"""<tr>
+<td>{l.id}</td><td>{l.name}</td><td>{l.city}</td>
+<td>{l.do_not_contact_reason or 'n/a'}</td>
+<td><a href="/admin/leads/{l.id}">view</a></td>
+</tr>"""
+    html = f"""<!DOCTYPE html>
+<html><head><title>Do Not Contact</title>
+<style>table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:8px;text-align:left}}
+th{{background:#1f2937;color:#fff}}a{{color:#2563eb}}</style></head><body>
+<h2>Do Not Contact</h2>
+<table><tr><th>ID</th><th>Name</th><th>City</th><th>Reason</th><th>Actions</th></tr>
+{rows}</table>
+</body></html>"""
+    return HTMLResponse(content=html)

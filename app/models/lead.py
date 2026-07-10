@@ -1,4 +1,5 @@
 import enum
+from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -60,6 +61,20 @@ class Lead(Base):
     status: Mapped[str] = mapped_column(
         String(50), default=LeadStatus.collected.value
     )
+    stage: Mapped[str] = mapped_column(
+        String(50), default="new"
+    )
+    assigned_to: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_contacted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_follow_up_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    do_not_contact: Mapped[bool] = mapped_column(default=False)
+    do_not_contact_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preferred_channel: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -69,3 +84,4 @@ class Lead(Base):
 
     job = relationship("SearchJob", back_populates="leads", foreign_keys=[search_job_id])
     landings = relationship("LandingPage", back_populates="lead", foreign_keys="LandingPage.lead_id")
+    stage_history = relationship("LeadStageHistory", back_populates="lead", foreign_keys="LeadStageHistory.lead_id")

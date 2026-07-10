@@ -29,6 +29,14 @@ class LeadResponse(BaseModel):
     qualification_score: int = 0
     qualification_reasons: str | None = None
     status: str
+    stage: str = "new"
+    assigned_to: str | None = None
+    last_contacted_at: datetime | None = None
+    next_follow_up_at: datetime | None = None
+    do_not_contact: bool = False
+    do_not_contact_reason: str | None = None
+    preferred_channel: str | None = None
+    notes: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

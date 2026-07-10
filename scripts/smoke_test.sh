@@ -112,4 +112,39 @@ if [ "$DEPLOY_ID" != "unknown" ] && [ "$DEPLOY_ID" != "mock" ]; then
     fi
 fi
 
+log "=== Outreach Flow ==="
+
+log "Creating outreach campaign..."
+CAMPAIGN_RESPONSE=$(curl -sf -X POST "${API_URL}/campaigns" \
+    -H "Content-Type: application/json" \
+    -d '{"name": "Smoke Test Campaign", "channel": "mock", "language": "ru"}')
+echo "$CAMPAIGN_RESPONSE"
+CAMPAIGN_ID=$(echo "$CAMPAIGN_RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin)['id'])")
+log "  Campaign ID: $CAMPAIGN_ID"
+
+log "Transitioning lead to qualified..."
+LEAD_ID=$(echo "$LEADS" | python -c "import sys, json; print(json.load(sys.stdin)[0]['id'])")
+curl -sf -X POST "${API_URL}/leads/${LEAD_ID}/stage" \
+    -H "Content-Type: application/json" \
+    -d '{"to_stage": "qualified", "reason": "Smoke test", "actor": "smoke-test"}' > /dev/null 2>&1 || true
+
+log "Transitioning lead to ready_for_outreach..."
+for stage in landing_generated needs_review ready_for_outreach; do
+    curl -sf -X POST "${API_URL}/leads/${LEAD_ID}/stage" \
+        -H "Content-Type: application/json" \
+        -d "{\"to_stage\": \"${stage}\", \"reason\": \"Smoke test\", \"actor\": \"smoke-test\"}" > /dev/null 2>&1 || true
+done
+
+log "Generating outreach messages..."
+curl -sf -X POST "${API_URL}/campaigns/${CAMPAIGN_ID}/generate-messages" > /dev/null 2>&1 || true
+
+log "Checking campaign detail..."
+CAMPAIGN_DETAIL=$(curl -sf "${API_URL}/campaigns/${CAMPAIGN_ID}")
+CAMPAIGN_STATUS=$(echo "$CAMPAIGN_DETAIL" | python -c "import sys, json; print(json.load(sys.stdin)['status'])")
+log "  Campaign status: $CAMPAIGN_STATUS"
+
+log "Checking outreach metrics..."
+METRICS=$(curl -sf "${API_URL}/metrics")
+log "  Metrics: $(echo "$METRICS" | python -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))" 2>/dev/null | head -5)"
+
 log "=== ALL SMOKE TESTS PASSED ==="

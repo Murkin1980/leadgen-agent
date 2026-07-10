@@ -12,6 +12,15 @@ os.environ["OPENAI_API_KEY"] = ""
 os.environ["OPENAI_MODEL"] = "gpt-4o-mini"
 os.environ["APP_ENV"] = "development"
 os.environ["ADMIN_PASSWORD"] = "testpass"
+os.environ["OUTREACH_PROVIDER"] = "mock"
+os.environ["OUTREACH_ENABLED"] = "false"
+os.environ["OUTREACH_MAX_PER_HOUR"] = "20"
+os.environ["OUTREACH_QUIET_HOURS_START"] = "20:00"
+os.environ["OUTREACH_QUIET_HOURS_END"] = "09:00"
+os.environ["OUTREACH_TIMEZONE"] = "Asia/Almaty"
+os.environ["FOLLOW_UP_ENABLED"] = "true"
+os.environ["FOLLOW_UP_DELAY_HOURS"] = "48"
+os.environ["FOLLOW_UP_MAX_COUNT"] = "2"
 
 import pytest
 from sqlalchemy import create_engine

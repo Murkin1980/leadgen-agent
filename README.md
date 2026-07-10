@@ -25,6 +25,15 @@ POST /jobs → Redis [collect] → CollectorWorker
 POST /jobs/{id}/deploy → Redis [deploy] → DeployerWorker
                                               ↓ (Cloudflare Pages or Mock)
                                          Deployment record in PostgreSQL
+
+                                         → Redis [outreach_generate] → OutreachGeneratorWorker
+                                                                        ↓ OutreachMessage (needs_review)
+                                                                   POST /campaigns/{id}/messages/{msg_id}/approve
+                                                                        ↓
+                                                                   Redis [outreach_send] → OutreachSenderWorker
+                                                                                              ↓ OutreachMessage (sent)
+                                                                                         POST /webhooks/whatsapp
+                                                                                              ↓ OutreachEvent (delivered)
 ```
 
 ### Сервисы
@@ -39,6 +48,9 @@ POST /jobs/{id}/deploy → Redis [deploy] → DeployerWorker
 | `content-generator` | RQ worker — AI/template генерация контента | `Dockerfile` |
 | `publisher` | RQ worker — копирование в sites/public | `Dockerfile` |
 | `deployer` | RQ worker — деплой на Cloudflare Pages | `Dockerfile.deployer` |
+| `outreach-generator` | RQ worker — генерация outreach-сообщений | `Dockerfile` |
+| `outreach-sender` | RQ worker — отправка через провайдеры | `Dockerfile` |
+| `outreach-status` | RQ worker — проверка статусов доставки | `Dockerfile` |
 | `postgres` | PostgreSQL 16 | — |
 | `redis` | Redis 7 | — |
 | `preview` | Nginx — статический сервер лендингов | — |
@@ -103,6 +115,10 @@ http://localhost:8000/admin/leads
 http://localhost:8000/admin/landings
 http://localhost:8000/admin/landings/{id}
 http://localhost:8000/admin/generations/{id}
+http://localhost:8000/admin/campaigns
+http://localhost:8000/admin/campaigns/{id}
+http://localhost:8000/admin/leads/{id}
+http://localhost:8000/admin/do-not-contact
 ```
 
 ## API Endpoints
@@ -133,6 +149,24 @@ http://localhost:8000/admin/generations/{id}
 | GET | `/deployments` | Список деплоев |
 | GET | `/deployments/{id}` | Статус деплоя |
 | GET | `/usage/openai` | Использование OpenAI |
+| POST | `/campaigns` | Создание кампании |
+| GET | `/campaigns` | Список кампаний |
+| GET | `/campaigns/{id}` | Детали кампании |
+| POST | `/campaigns/{id}/generate-messages` | Генерация outreach-сообщений |
+| GET | `/campaigns/{id}/messages` | Сообщения кампании |
+| POST | `/campaigns/{id}/messages/{msg_id}/approve` | Утверждение сообщения |
+| POST | `/campaigns/{id}/messages/{msg_id}/reject` | Отклонение сообщения |
+| POST | `/campaigns/{id}/messages/{msg_id}/send` | Отправка сообщения |
+| GET | `/campaigns/{id}/follow-up-candidates` | Кандидаты на follow-up |
+| POST | `/leads/{id}/stage` | Переход по этапу воронки |
+| POST | `/leads/{id}/do-not-contact` | Блокировка лида |
+| DELETE | `/leads/{id}/do-not-contact` | Снятие блокировки |
+| POST | `/webhooks/whatsapp` | Webhook WhatsApp |
+| POST | `/webhooks/email` | Webhook Email |
+| POST | `/webhooks/telegram` | Webhook Telegram |
+| GET | `/metrics` | Метрики outreach |
+| GET | `/audit-log` | Журнал аудита |
+| GET | `/providers` | Список outreach-провайдеров |
 
 ## Переменные окружения
 
@@ -156,6 +190,25 @@ http://localhost:8000/admin/generations/{id}
 | `DEFAULT_LANGUAGE` | Язык по умолчанию (`ru`/`kk`) | `ru` |
 | `ADMIN_USERNAME` | Логин админки | `admin` |
 | `ADMIN_PASSWORD` | Пароль админки | — |
+| `OUTREACH_PROVIDER` | Провайдер outreach (`mock`/`whatsapp`/`email`/`telegram`) | `mock` |
+| `OUTREACH_ENABLED` | Включить отправку | `false` |
+| `OUTREACH_MAX_PER_HOUR` | Лимит сообщений в час | `50` |
+| `OUTREACH_QUIET_HOURS_START` | Начало тихих часов (HH:MM) | `09:00` |
+| `OUTREACH_QUIET_HOURS_END` | Конец тихих часов (HH:MM) | `20:00` |
+| `OUTREACH_TIMEZONE` | Часовой пояс | `Asia/Almaty` |
+| `WHATSAPP_API_VERSION` | Версия WhatsApp API | `v18.0` |
+| `WHATSAPP_PHONE_NUMBER_ID` | ID телефона WhatsApp | — |
+| `WHATSAPP_ACCESS_TOKEN` | Токен доступа WhatsApp | — |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | ID бизнес-аккаунта WhatsApp | — |
+| `WHATSAPP_VERIFY_TOKEN` | Токен верификации webhook | — |
+| `EMAIL_SMTP_HOST` | SMTP хост | — |
+| `EMAIL_SMTP_PORT` | SMTP порт | `587` |
+| `EMAIL_USERNAME` | SMTP логин | — |
+| `EMAIL_PASSWORD` | SMTP пароль | — |
+| `EMAIL_FROM_ADDRESS` | Email отправителя | — |
+| `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | — |
+| `FOLLOW_UP_DELAY_HOURS` | Задержка между follow-up (часы) | `48` |
+| `FOLLOW_UP_MAX_COUNT` | Макс. количество follow-up | `3` |
 
 ## Тесты
 
@@ -164,6 +217,8 @@ pip install -r requirements.txt
 pip install pytest
 TEXT_GENERATOR_PROVIDER=mock DEPLOYMENT_PROVIDER=mock COLLECTOR_PROVIDER=mock pytest tests/ -v
 ```
+
+239 tests, включая CRM pipeline, outreach providers, message generation, webhook handling, security (CSRF, rate limiting).
 
 ## CI
 
@@ -178,6 +233,7 @@ GitHub Actions запускает:
 app/
 ├── api/
 │   ├── routes.py           # FastAPI endpoints
+│   ├── outreach_routes.py  # Outreach API endpoints
 │   └── admin.py            # Admin UI (Jinja2)
 ├── collector/              # Сбор данных
 │   ├── adapter.py
@@ -213,11 +269,26 @@ app/
 ├── logging/
 │   └── structured.py       # JSON structured logging
 ├── models/
-│   ├── lead.py             # Lead model
+│   ├── lead.py             # Lead model (CRM fields)
+│   ├── stage.py            # LeadStage enum + LeadStageHistory
 │   ├── search_job.py       # SearchJob model
 │   ├── landing_page.py     # LandingPage + LandingPageVersion
 │   ├── content_generation.py # ContentGeneration model
-│   └── deployment.py       # Deployment model
+│   ├── deployment.py       # Deployment model
+│   ├── campaign.py         # OutreachCampaign + OutreachMessage
+│   ├── event.py            # OutreachEvent
+│   └── audit.py            # AuditLog
+├── outreach/               # Outreach module
+│   ├── provider.py         # OutreachProvider base class
+│   ├── mock_provider.py    # MockOutreachProvider
+│   ├── email_provider.py   # EmailOutreachProvider (stub)
+│   ├── whatsapp_provider.py # WhatsAppCloudProvider (stub)
+│   ├── telegram_provider.py # TelegramOutreachProvider (stub)
+│   ├── factory.py          # create_outreach_provider()
+│   ├── message_generator.py # RU/KK message templates
+│   ├── service.py          # Outreach business logic
+│   ├── stage_service.py    # LeadStage transitions
+│   └── webhook_handler.py  # Webhook event processing
 ├── publisher/
 │   └── publisher.py        # publish_site()
 ├── qualification/
@@ -227,7 +298,9 @@ app/
 │   ├── lead.py
 │   ├── landing.py
 │   ├── content_generation.py
-│   └── deployment.py
+│   ├── deployment.py
+│   └── outreach.py         # Outreach Pydantic schemas
+├── security.py             # CSRF, audit log, login rate limiting
 ├── verification/
 │   └── website.py          # WebsiteVerifier (SSRF protection)
 ├── workers/
@@ -236,7 +309,10 @@ app/
 │   ├── generator_worker.py
 │   ├── content_generator_worker.py
 │   ├── publisher_worker.py
-│   └── deployer_worker.py
+│   ├── deployer_worker.py
+│   ├── outreach_generator_worker.py
+│   ├── outreach_sender_worker.py
+│   └── outreach_status_worker.py
 ├── config.py               # Settings (pydantic-settings)
 ├── database.py             # SQLAlchemy engine
 └── main.py                 # FastAPI app
@@ -245,13 +321,18 @@ alembic/versions/
 ├── 001_initial.py
 ├── 002_deployments_and_job_id.py
 ├── 003_provider_and_qualification.py
-└── 004_content_generations_and_landing_versions.py
+├── 004_content_generations_and_landing_versions.py
+└── 005_crm_outreach_audit.py
 
 docs/
 ├── AI_GENERATION_POLICY.md
 ├── CONTENT_REVIEW_RUNBOOK.md
 ├── COLLECTOR_RUNBOOK.md
-└── DATA_SOURCE_POLICY.md
+├── CRM_PIPELINE.md
+├── DATA_SOURCE_POLICY.md
+├── OUTREACH_POLICY.md
+├── OUTREACH_RUNBOOK.md
+└── WHATSAPP_CLOUD_SETUP.md
 ```
 
 ## Диаграмма состояний
@@ -283,6 +364,27 @@ queued → running → succeeded
                  → failed
 ```
 
+### OutreachCampaign
+```
+draft → ready → running → completed
+                    → paused
+              → cancelled
+              → failed
+```
+
+### OutreachMessage
+```
+draft → needs_review → approved → queued → sent → delivered → read → replied
+                                       → failed
+                              → rejected → cancelled
+```
+
+### LeadStage
+```
+new → qualified → landing_generated → needs_review → ready_for_outreach → contacted → replied → interested → proposal_sent → won/lost
+                                                                                                                → do_not_contact
+```
+
 ## Ограничения
 
 - OpenAI отключен по умолчанию (provider = template)
@@ -290,3 +392,7 @@ queued → running → succeeded
 - Все факты должны быть проверены перед публикацией
 - Не логируются API ключи, полные промпты, сырые данные клиентов
 - Тесты никогда не вызывают реальный OpenAI API
+- Outreach не отправляется без `OUTREACH_ENABLED=true`
+- Все outreach-сообщения требуют ручного утверждения
+- WhatsApp/Email/Telegram провайдеры — заглушки (stubs) для MVP
+- Тихие часы и лимиты сообщений настраиваются через env vars

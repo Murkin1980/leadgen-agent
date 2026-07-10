@@ -53,6 +53,32 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = ""
 
+    outreach_provider: str = "mock"
+    outreach_enabled: bool = False
+    outreach_max_per_hour: int = 20
+    outreach_quiet_hours_start: str = "20:00"
+    outreach_quiet_hours_end: str = "09:00"
+    outreach_timezone: str = "Asia/Almaty"
+    outreach_max_message_length: int = 1000
+
+    whatsapp_cloud_api_token: str = ""
+    whatsapp_cloud_phone_number_id: str = ""
+    whatsapp_cloud_business_account_id: str = ""
+    whatsapp_webhook_verify_token: str = ""
+
+    email_smtp_host: str = ""
+    email_smtp_port: int = 587
+    email_smtp_user: str = ""
+    email_smtp_password: str = ""
+    email_from_address: str = ""
+    email_from_name: str = "LeadGen"
+
+    telegram_bot_token: str = ""
+
+    follow_up_enabled: bool = True
+    follow_up_delay_hours: int = 48
+    follow_up_max_count: int = 2
+
     @model_validator(mode="after")
     def validate_openai_config(self) -> "Settings":
         if self.text_generator_provider == "openai":
