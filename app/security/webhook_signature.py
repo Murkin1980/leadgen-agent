@@ -8,7 +8,7 @@ from app.config import settings
 
 def compute_hmac_sha256(secret: str, payload: bytes) -> str:
     """Compute HMAC-SHA256 hex digest for the given payload and secret."""
-    return hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    return hmac.HMAC(secret.encode(), payload, hashlib.sha256).hexdigest()
 
 
 def verify_signature(

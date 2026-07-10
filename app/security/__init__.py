@@ -26,3 +26,14 @@ __all__ = [
     "verify_webhook_signature",
     "log_audit_event",
 ]
+
+
+def _import_sanity_check() -> None:
+    """Verify all public symbols resolve at import time."""
+    import sys
+    for name in __all__:
+        if name not in globals():
+            raise ImportError(f"app.security failed to export {name}")
+
+
+_import_sanity_check()

@@ -50,7 +50,46 @@ services:
       - ./sites:/app/sites
     restart: unless-stopped
 
+  worker:
+    build: .
+    env_file: .env
+    command:
+      - python
+      - -m
+      - rq
+      - worker
+      - --url
+      - redis://redis:6379/0
+      - collect
+      - enrich
+      - generate_content
+      - publish
+      - outreach_generate
+      - outreach_send
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./sites:/app/sites
+    restart: unless-stopped
+
+  preview:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./sites/public:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # --- Advanced services (disabled by default) ---
+  # Run with: docker compose --profile advanced up --build
+
   collector:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "collect"]
@@ -64,6 +103,7 @@ services:
     restart: unless-stopped
 
   enricher:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "enrich"]
@@ -77,6 +117,7 @@ services:
     restart: unless-stopped
 
   generator:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "generate"]
@@ -90,6 +131,7 @@ services:
     restart: unless-stopped
 
   content-generator:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "generate_content"]
@@ -103,6 +145,7 @@ services:
     restart: unless-stopped
 
   publisher:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "publish"]
@@ -116,6 +159,7 @@ services:
     restart: unless-stopped
 
   deployer:
+    profiles: ["advanced"]
     build:
       context: .
       dockerfile: Dockerfile.deployer
@@ -131,6 +175,7 @@ services:
     restart: unless-stopped
 
   outreach-generator:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "outreach_generate"]
@@ -142,6 +187,7 @@ services:
     restart: unless-stopped
 
   outreach-sender:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "outreach_send"]
@@ -153,6 +199,7 @@ services:
     restart: unless-stopped
 
   outreach-status:
+    profiles: ["advanced"]
     build: .
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "outreach_status"]
@@ -161,16 +208,6 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-    restart: unless-stopped
-
-  preview:
-    image: nginx:alpine
-    ports:
-      - "8080:80"
-    volumes:
-      - ./sites/public:/usr/share/nginx/html:ro
-    depends_on:
-      - publisher
     restart: unless-stopped
 
 volumes:

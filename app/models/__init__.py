@@ -8,6 +8,7 @@ from app.models.stage import LeadStageHistory
 from app.models.event import OutreachEvent
 from app.models.audit import AuditLog
 from app.models.whatsapp import WhatsAppTemplate, InboundMessage
+from app.models.api_key import ApiKeyModel
 
 __all__ = [
     "Lead",
@@ -23,4 +24,5 @@ __all__ = [
     "AuditLog",
     "WhatsAppTemplate",
     "InboundMessage",
+    "ApiKeyModel",
 ]
