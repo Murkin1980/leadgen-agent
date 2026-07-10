@@ -89,6 +89,19 @@ services:
       - ./sites:/app/sites
     restart: unless-stopped
 
+  content-generator:
+    build: .
+    env_file: .env
+    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "generate_content"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./sites:/app/sites
+    restart: unless-stopped
+
   publisher:
     build: .
     env_file: .env

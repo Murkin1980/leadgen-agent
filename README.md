@@ -1,4 +1,4 @@
-# Leadgen Agent MVP
+# Leadgen Agent
 
 Автоматический пайплайн поиска компаний без сайта, генерации и публикации лендингов.
 
@@ -9,13 +9,18 @@ POST /jobs → Redis [collect] → CollectorWorker
                                   ↓ Lead IDs
                             Redis [enrich] → EnricherWorker
                                                ↓ Lead IDs
-                                          Redis [generate] → GeneratorWorker
-                                                               ↓ LandingPage IDs
-                                                          Redis [publish] → PublisherWorker
-                                                                                ↓
-                                                                           sites/public/{slug}/
-                                                                                ↓
-                                                                           Nginx :8080 (preview)
+                                         [manual or auto]
+                                           POST /leads/{id}/content-generations
+                                                 ↓
+                                        Redis [generate_content] → ContentGeneratorWorker
+                                                                      ↓ LandingPage (needs_review)
+                                                                 POST /landings/{id}/approve
+                                                                      ↓
+                                                                 POST /landings/{id}/publish
+                                                                      ↓
+                                                                 sites/public/{slug}/
+                                                                      ↓
+                                                                 Nginx :8080 (preview)
 
 POST /jobs/{id}/deploy → Redis [deploy] → DeployerWorker
                                               ↓ (Cloudflare Pages or Mock)
@@ -27,10 +32,11 @@ POST /jobs/{id}/deploy → Redis [deploy] → DeployerWorker
 | Сервис | Описание | Dockerfile |
 |---|---|---|
 | `migrate` | Применяет Alembic миграции при старте | `Dockerfile` |
-| `api` | FastAPI — REST API | `Dockerfile` |
+| `api` | FastAPI — REST API + Admin UI | `Dockerfile` |
 | `collector` | RQ worker — сбор компаний | `Dockerfile` |
 | `enricher` | RQ worker — обогащение лидов | `Dockerfile` |
-| `generator` | RQ worker — генерация JSON и HTML | `Dockerfile` |
+| `generator` | RQ worker — генерация JSON (legacy) | `Dockerfile` |
+| `content-generator` | RQ worker — AI/template генерация контента | `Dockerfile` |
 | `publisher` | RQ worker — копирование в sites/public | `Dockerfile` |
 | `deployer` | RQ worker — деплой на Cloudflare Pages | `Dockerfile.deployer` |
 | `postgres` | PostgreSQL 16 | — |
@@ -59,39 +65,44 @@ curl -X POST http://localhost:8000/jobs \
   }'
 ```
 
-### Просмотр задания
+### Генерация контента
 
 ```bash
-curl http://localhost:8000/jobs/1
+# Сгенерировать контент для лида
+curl -X POST http://localhost:8000/leads/{lead_id}/content-generations \
+  -H "Content-Type: application/json" \
+  -d '{"language": "ru", "provider": "template"}'
+
+# Проверить статус генерации
+curl http://localhost:8000/content-generations/{generation_id}
 ```
 
-### Список лидов
+### Утверждение лендинга
 
 ```bash
-curl "http://localhost:8000/leads?city=Алматы&status=published"
+# Утвердить
+curl -X POST http://localhost:8000/landings/{landing_id}/approve
+
+# Отклонить
+curl -X POST http://localhost:8000/landings/{landing_id}/reject \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Слишком общие преимущества"}'
 ```
 
-### Просмотр лендинга
-
-```
-http://localhost:8080/{slug}/
-```
-
-### Деплой на Cloudflare
+### Публикация
 
 ```bash
-# Через API (рекомендуется)
-curl -X POST http://localhost:8000/jobs/1/deploy
-
-# Или вручную через скрипт
-bash scripts/deploy_cloudflare.sh
+# Только утвержденные лендинги могут быть опубликованы
+curl -X POST http://localhost:8000/landings/{landing_id}/publish
 ```
 
-### Проверка статуса деплоя
+### Админ-интерфейс
 
-```bash
-curl http://localhost:8000/deployments
-curl http://localhost:8000/deployments/{deployment_id}
+```
+http://localhost:8000/admin/leads
+http://localhost:8000/admin/landings
+http://localhost:8000/admin/landings/{id}
+http://localhost:8000/admin/generations/{id}
 ```
 
 ## API Endpoints
@@ -99,128 +110,183 @@ curl http://localhost:8000/deployments/{deployment_id}
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/health` | Проверка здоровья |
+| GET | `/providers` | Список провайдеров |
 | POST | `/jobs` | Создание задания |
 | GET | `/jobs/{id}` | Получение задания |
+| POST | `/jobs/{id}/cancel` | Отмена задания |
+| POST | `/jobs/{id}/retry` | Повтор задания |
 | POST | `/jobs/{id}/deploy` | Деплой на Cloudflare Pages |
-| GET | `/leads` | Список лидов (фильтры: city, category, status, search_job_id) |
+| GET | `/leads` | Список лидов |
 | GET | `/leads/{id}` | Карточка лида |
-| POST | `/leads/{id}/generate` | Повторная генерация |
+| POST | `/leads/{id}/content-generations` | Генерация контента |
+| GET | `/content-generations` | Список генераций |
+| GET | `/content-generations/{id}` | Детали генерации |
+| GET | `/landings` | Список лендингов |
+| GET | `/landings/{id}` | Карточка лендинга |
+| POST | `/landings/{id}/approve` | Утверждение |
+| POST | `/landings/{id}/reject` | Отклонение |
+| PUT | `/landings/{id}/profile` | Редактирование профиля |
+| GET | `/landings/{id}/versions` | История версий |
+| GET | `/landings/{id}/versions/{n}` | Версия |
+| POST | `/landings/{id}/versions/{n}/restore` | Восстановление версии |
 | POST | `/landings/{id}/publish` | Публикация |
-| GET | `/deployments` | Список деплоев (фильтры: job_id, status) |
+| GET | `/deployments` | Список деплоев |
 | GET | `/deployments/{id}` | Статус деплоя |
+| GET | `/usage/openai` | Использование OpenAI |
 
 ## Переменные окружения
 
 | Переменная | Описание | По умолчанию |
 |---|---|---|
-| `APP_ENV` | Режим | `development` |
+| `APP_ENV` | Режим (`development`/`production`) | `development` |
 | `DATABASE_URL` | URL PostgreSQL | — |
 | `REDIS_URL` | URL Redis | — |
-| `TEXT_GENERATOR_PROVIDER` | `template` или `openai` | `template` |
+| `TEXT_GENERATOR_PROVIDER` | `template`, `openai`, `mock` | `template` |
 | `OPENAI_API_KEY` | Ключ OpenAI | — |
+| `OPENAI_MODEL` | Модель OpenAI | `gpt-4o-mini` |
+| `OPENAI_TIMEOUT_SECONDS` | Таймаут запроса | `45` |
+| `OPENAI_MAX_RETRIES` | Макс. повторов | `3` |
+| `OPENAI_TEMPERATURE` | Температура | `0.4` |
+| `OPENAI_MAX_OUTPUT_TOKENS` | Макс. токенов | `2500` |
+| `OPENAI_DAILY_BUDGET_USD` | Дневной лимит ($) | `5` |
+| `OPENAI_MAX_REQUESTS_PER_JOB` | Лимит запросов на задание | `30` |
 | `PUBLIC_BASE_URL` | Базовый URL для превью | `http://localhost:8080` |
-| `COLLECTOR_PROVIDER` | `mock` или `two_gis` | `mock` |
+| `COLLECTOR_PROVIDER` | `mock`, `csv`, `two_gis` | `mock` |
 | `DEPLOYMENT_PROVIDER` | `mock` или `cloudflare` | `mock` |
-| `CLOUDFLARE_API_TOKEN` | Токен Cloudflare API | — |
-| `CLOUDFLARE_ACCOUNT_ID` | ID аккаунта Cloudflare | — |
-| `CLOUDFLARE_PAGES_PROJECT` | Имя проекта Cloudflare Pages | `leadgen-agent` |
-| `CLOUDFLARE_PAGES_BRANCH` | Ветка для деплоя | `master` |
-| `CLOUDFLARE_PUBLIC_URL` | Публичный URL деплоя | `https://leadgen-agent.pages.dev` |
+| `DEFAULT_LANGUAGE` | Язык по умолчанию (`ru`/`kk`) | `ru` |
+| `ADMIN_USERNAME` | Логин админки | `admin` |
+| `ADMIN_PASSWORD` | Пароль админки | — |
 
 ## Тесты
 
 ```bash
 pip install -r requirements.txt
 pip install pytest
-DEPLOYMENT_PROVIDER=mock COLLECTOR_PROVIDER=mock pytest tests/ -v
-```
-
-## Mock-деплой (без Cloudflare)
-
-```bash
-DEPLOYMENT_PROVIDER=mock curl -X POST http://localhost:8000/jobs/1/deploy
-```
-
-## Настоящий Cloudflare деплой
-
-1. Установить `.env`:
-```env
-DEPLOYMENT_PROVIDER=cloudflare
-CLOUDFLARE_API_TOKEN=ваш_токен
-CLOUDFLARE_ACCOUNT_ID=ваш_account_id
-```
-
-2. Запустить:
-```bash
-docker compose up --build -d
-curl -X POST http://localhost:8000/jobs/1/deploy
+TEXT_GENERATOR_PROVIDER=mock DEPLOYMENT_PROVIDER=mock COLLECTOR_PROVIDER=mock pytest tests/ -v
 ```
 
 ## CI
 
 GitHub Actions запускает:
 1. **Unit-тесты** — pytest + compile check
-2. **Docker build** — `docker compose build` всех образов (включая deployer)
-3. **Smoke test** — полный пайплайн в Docker (mock-деплой, без реального Cloudflare)
+2. **Docker build** — `docker compose build` всех образов
+3. **Smoke test** — полный пайплайн в Docker (mock-провайдеры)
 
 ## Структура проекта
 
 ```
 app/
-├── api/routes.py          # FastAPI endpoints
-├── collector/             # Сбор данных (mock + 2GIS stub)
-│   ├── adapter.py         # CollectorAdapter Protocol
-│   ├── base.py            # CollectedCompany + CollectedPage DTOs
-│   ├── mock.py            # MockCollectorAdapter (paginated)
+├── api/
+│   ├── routes.py           # FastAPI endpoints
+│   └── admin.py            # Admin UI (Jinja2)
+├── collector/              # Сбор данных
+│   ├── adapter.py
+│   ├── base.py
+│   ├── mock.py
+│   ├── csv.py
+│   ├── factory.py
 │   └── adapters/
-│       └── two_gis.py     # TwoGisCollectorAdapter (disabled)
-├── deployment/            # Абстракция деплоя
-│   ├── adapter.py         # DeploymentAdapter Protocol
-│   ├── base.py            # DeploymentResult DTO
-│   ├── mock.py            # MockDeploymentAdapter
-│   └── cloudflare.py      # CloudflarePagesDeploymentAdapter
-├── enrichment/            # Обогащение лидов
-├── generation/            # Генерация JSON-профиля (template + OpenAI stub)
-├── landing/               # JSON-схема и HTML-рендеринг
-├── publisher/             # Публикация в sites/public
-├── workers/               # RQ workers
-│   ├── collector_worker.py
-│   ├── enricher_worker.py
-│   ├── generator_worker.py
-│   ├── publisher_worker.py
-│   └── deployer_worker.py
-├── models/                # SQLAlchemy модели
-│   ├── lead.py            # Lead (with search_job_id FK)
-│   ├── search_job.py      # SearchJob
-│   ├── landing_page.py    # LandingPage
-│   └── deployment.py      # Deployment
-├── schemas/               # Pydantic schemas
+│       └── two_gis.py
+├── content_validator.py    # Валидация контента (deprecated, use generation/validator.py)
+├── deployment/             # Абстракция деплоя
+│   ├── adapter.py
+│   ├── base.py
+│   ├── mock.py
+│   └── cloudflare.py
+├── enrichment/
+│   └── enricher.py         # Обогащение лидов
+├── generation/
+│   ├── base.py             # TextGenerationAdapter Protocol + GeneratedProfile
+│   ├── context.py          # GenerationContext dataclass
+│   ├── factory.py          # Provider factory
+│   ├── mock.py             # MockTextGenerationAdapter
+│   ├── openai.py           # OpenAITextGenerationAdapter
+│   ├── template.py         # TemplateTextGenerationAdapter (ru/kk)
+│   ├── usage.py            # UsageTracker (budget/limits)
+│   ├── validator.py        # GeneratedContentValidator
+│   └── prompts/
+│       ├── system_v1.txt
+│       └── landing_profile_v1.txt
+├── landing/
+│   ├── schema.py           # LandingProfile Pydantic schema
+│   └── renderer.py         # Jinja2 HTML renderer
+├── logging/
+│   └── structured.py       # JSON structured logging
+├── models/
+│   ├── lead.py             # Lead model
+│   ├── search_job.py       # SearchJob model
+│   ├── landing_page.py     # LandingPage + LandingPageVersion
+│   ├── content_generation.py # ContentGeneration model
+│   └── deployment.py       # Deployment model
+├── publisher/
+│   └── publisher.py        # publish_site()
+├── qualification/
+│   └── service.py          # LeadQualifier
+├── schemas/
 │   ├── job.py
 │   ├── lead.py
 │   ├── landing.py
+│   ├── content_generation.py
 │   └── deployment.py
-├── config.py              # Настройки
-└── database.py            # Подключение к БД
+├── verification/
+│   └── website.py          # WebsiteVerifier (SSRF protection)
+├── workers/
+│   ├── collector_worker.py
+│   ├── enricher_worker.py
+│   ├── generator_worker.py
+│   ├── content_generator_worker.py
+│   ├── publisher_worker.py
+│   └── deployer_worker.py
+├── config.py               # Settings (pydantic-settings)
+├── database.py             # SQLAlchemy engine
+└── main.py                 # FastAPI app
 
-scripts/
-├── deploy_cloudflare.sh   # Ручной деплой (адаптер)
-├── publish_to_git.sh      # Деплой через Git
-└── smoke_test.sh          # Интеграционный smoke test
+alembic/versions/
+├── 001_initial.py
+├── 002_deployments_and_job_id.py
+├── 003_provider_and_qualification.py
+└── 004_content_generations_and_landing_versions.py
 
-Dockerfile                 # Основной образ (Python + Node.js)
-Dockerfile.deployer        # Образ деплойера (Python + Node.js + Wrangler)
+docs/
+├── AI_GENERATION_POLICY.md
+├── CONTENT_REVIEW_RUNBOOK.md
+├── COLLECTOR_RUNBOOK.md
+└── DATA_SOURCE_POLICY.md
 ```
 
-## Диаграмма состояний деплоя
+## Диаграмма состояний
 
+### SearchJob
+```
+pending → collecting → enriching → generating → publishing → completed
+                                                        → failed
+          → cancelled
+```
+
+### LandingPage
+```
+draft → needs_review → approved → published → deployed
+                → rejected
+                → failed
+```
+
+### ContentGeneration
 ```
 queued → running → succeeded
-                  → failed
+                 → failed
+                 → rejected (validation failed)
 ```
 
-## Оставшиеся задачи
+### Deployment
+```
+queued → running → succeeded
+                 → failed
+```
 
-- [ ] Подключить настоящий 2GIS API (замена MockCollectorAdapter)
-- [ ] Подключить OpenAI для генерации профилей (замена TemplateTextGenerationAdapter)
-- [ ] Добавить структурированные логи
-- [ ] Добавить retry и dead-letter обработку
+## Ограничения
+
+- OpenAI отключен по умолчанию (provider = template)
+- AI-генерация не публикуется автоматически
+- Все факты должны быть проверены перед публикацией
+- Не логируются API ключи, полные промпты, сырые данные клиентов
+- Тесты никогда не вызывают реальный OpenAI API

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.landing.renderer import render_landing, save_landing
 from app.landing.schema import LandingProfile
-from app.models.landing_page import LandingPage, LandingStatus
+from app.models.landing_page import LandingPage, LandingStatus, ReviewStatus
 from app.models.lead import Lead, LeadStatus
 from app.models.search_job import SearchJob, JobStatus
 from app.publisher.publisher import publish_site
@@ -28,6 +28,14 @@ def run_publisher(landing_ids: list[str], job_id: int) -> None:
         for lid in landing_ids:
             landing = db.query(LandingPage).filter(LandingPage.id == lid).first()
             if not landing:
+                continue
+
+            if landing.review_status != ReviewStatus.approved.value:
+                logger.warning(
+                    "Skipping landing %s: review_status=%s (must be approved)",
+                    lid,
+                    landing.review_status,
+                )
                 continue
 
             try:
@@ -52,6 +60,7 @@ def run_publisher(landing_ids: list[str], job_id: int) -> None:
                 preview_url = publish_site(landing.slug)
                 landing.preview_url = preview_url
                 landing.status = LandingStatus.published.value
+                landing.review_status = ReviewStatus.published.value
                 landing.output_path = f"sites/public/{landing.slug}"
 
                 lead = db.query(Lead).filter(Lead.id == landing.lead_id).first()

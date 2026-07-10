@@ -37,11 +37,32 @@ class ThemeInfo(BaseModel):
     accent_color: str = "#c9975b"
 
 
+class WorkStage(BaseModel):
+    number: int
+    title: str
+    description: str
+
+
+class FaqItem(BaseModel):
+    question: str
+    answer: str
+
+
+class ClaimItem(BaseModel):
+    text: str
+    source_field: str
+    verified: bool = True
+
+
 class LandingProfile(BaseModel):
     meta: MetaInfo
     company: CompanyInfo
     hero: HeroSection
     services: list[ServiceItem] = []
     advantages: list[str] = []
+    work_stages: list[WorkStage] = []
+    faq: list[FaqItem] = []
     contacts: ContactsInfo = ContactsInfo()
     theme: ThemeInfo = ThemeInfo()
+    language: str = "ru"
+    claims: list[ClaimItem] = []

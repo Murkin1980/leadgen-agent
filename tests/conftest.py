@@ -2,12 +2,16 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite:///test.db"
 os.environ["REDIS_URL"] = "redis://localhost:6379/15"
-os.environ["TEXT_GENERATOR_PROVIDER"] = "template"
+os.environ["TEXT_GENERATOR_PROVIDER"] = "mock"
 os.environ["PUBLIC_BASE_URL"] = "http://localhost:8080"
 os.environ["DEPLOYMENT_PROVIDER"] = "mock"
 os.environ["COLLECTOR_PROVIDER"] = "mock"
 os.environ["VERIFICATION_ENABLED"] = "false"
 os.environ["LEAD_MIN_SCORE"] = "50"
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["OPENAI_MODEL"] = "gpt-4o-mini"
+os.environ["APP_ENV"] = "development"
+os.environ["ADMIN_PASSWORD"] = "testpass"
 
 import pytest
 from sqlalchemy import create_engine

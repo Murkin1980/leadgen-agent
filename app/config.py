@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -8,6 +9,12 @@ class Settings(BaseSettings):
     text_generator_provider: str = "template"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    openai_timeout_seconds: int = 45
+    openai_max_retries: int = 3
+    openai_temperature: float = 0.4
+    openai_max_output_tokens: int = 2500
+    openai_daily_budget_usd: float = 5.0
+    openai_max_requests_per_job: int = 30
     public_base_url: str = "http://localhost:8080"
 
     deployment_provider: str = "mock"
@@ -40,6 +47,38 @@ class Settings(BaseSettings):
     lead_score_instagram: int = 15
     lead_score_rating: int = 20
     lead_score_reviews: int = 15
+
+    default_language: str = "ru"
+
+    admin_username: str = "admin"
+    admin_password: str = ""
+
+    @model_validator(mode="after")
+    def validate_openai_config(self) -> "Settings":
+        if self.text_generator_provider == "openai":
+            if not self.openai_api_key:
+                raise ValueError(
+                    "OPENAI_API_KEY is required when TEXT_GENERATOR_PROVIDER=openai"
+                )
+            if not self.openai_model:
+                raise ValueError(
+                    "OPENAI_MODEL is required when TEXT_GENERATOR_PROVIDER=openai"
+                )
+        if self.openai_timeout_seconds <= 0:
+            raise ValueError("OPENAI_TIMEOUT_SECONDS must be positive")
+        if self.openai_max_retries < 0:
+            raise ValueError("OPENAI_MAX_RETRIES must be non-negative")
+        if self.openai_daily_budget_usd < 0:
+            raise ValueError("OPENAI_DAILY_BUDGET_USD must be non-negative")
+        if self.openai_max_requests_per_job < 0:
+            raise ValueError("OPENAI_MAX_REQUESTS_PER_JOB must be non-negative")
+        return self
+
+    @model_validator(mode="after")
+    def validate_admin_password(self) -> "Settings":
+        if self.app_env == "production" and not self.admin_password:
+            raise ValueError("ADMIN_PASSWORD is required in production mode")
+        return self
 
     class Config:
         env_file = ".env"
