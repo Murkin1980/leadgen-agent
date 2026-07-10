@@ -7,7 +7,8 @@ on:
     branches: [master]
 
 jobs:
-  test:
+  lint:
+    name: Lint & Static Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,37 +21,172 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest
+          pip install ruff
+
+      - name: Run Ruff
+        run: ruff check app tests
+
+      - name: Check formatting
+        run: ruff format --check app tests
 
       - name: Compile check
         run: python -m compileall app -q
 
-      - name: Run tests
+      - name: Check migration heads
+        run: |
+          pip install alembic
+          alembic heads
+          # Fail if multiple heads exist
+          alembic heads 2>&1 | grep -v "^$" | wc -l | xargs -I {} test {} -eq 1
+
+  unit-tests:
+    name: Unit Tests (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests
         env:
           DATABASE_URL: "sqlite:///test.db"
           REDIS_URL: "redis://localhost:6379/15"
           TEXT_GENERATOR_PROVIDER: "template"
           DEPLOYMENT_PROVIDER: "mock"
           COLLECTOR_PROVIDER: "mock"
-        run: pytest tests/ -v
+          VERIFICATION_ENABLED: "false"
+          LEAD_MIN_SCORE: "50"
+          OPENAI_API_KEY: ""
+          OPENAI_MODEL: "gpt-4o-mini"
+          APP_ENV: "development"
+          ADMIN_PASSWORD: "testpass"
+          OUTREACH_PROVIDER: "mock"
+          OUTREACH_ENABLED: "false"
+          OUTREACH_MAX_PER_HOUR: "20"
+          OUTREACH_QUIET_HOURS_START: "20:00"
+          OUTREACH_QUIET_HOURS_END: "09:00"
+          OUTREACH_TIMEZONE: "Asia/Almaty"
+          FOLLOW_UP_ENABLED: "true"
+          FOLLOW_UP_DELAY_HOURS: "48"
+          FOLLOW_UP_MAX_COUNT: "2"
+          OUTREACH_MODE: "sandbox"
+          OUTREACH_SANDBOX_ALLOWLIST: "+77000000001,+77000000002"
+          WHATSAPP_APP_SECRET: ""
+          WHATSAPP_WEBHOOK_VERIFY_TOKEN: "test_verify_token"
+          WHATSAPP_SERVICE_WINDOW_HOURS: "24"
+          WHATSAPP_ALLOW_MOCK_WEBHOOKS: "true"
+        run: |
+          pytest tests/ -v --cov=app --cov-report=xml --cov-fail-under=80 \
+            --cov-config=.coveragerc
 
-  docker-build:
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+
+  postgres-tests:
+    name: PostgreSQL Integration Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: leadgen
+          POSTGRES_USER: leadgen
+          POSTGRES_PASSWORD: leadgen
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U leadgen"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate Docker Compose
-        run: docker compose config
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Build all images
-        run: docker compose build
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov alembic psycopg[binary]
 
-      - name: Build deployer image
-        run: docker build -f Dockerfile.deployer -t leadgen-deployer .
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U leadgen && break
+            sleep 1
+          done
 
-  smoke-test:
+      - name: Run migrations
+        env:
+          DATABASE_URL: "postgresql+psycopg://leadgen:leadgen@localhost:5432/leadgen"
+        run: alembic upgrade head
+
+      - name: Verify single migration head
+        env:
+          DATABASE_URL: "postgresql+psycopg://leadgen:leadgen@localhost:5432/leadgen"
+        run: |
+          alembic heads 2>&1 | grep -v "^$" | wc -l | xargs -I {} test {} -eq 1
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: "postgresql+psycopg://leadgen:leadgen@localhost:5432/leadgen"
+          REDIS_URL: "redis://localhost:6379/0"
+          TEXT_GENERATOR_PROVIDER: "template"
+          DEPLOYMENT_PROVIDER: "mock"
+          COLLECTOR_PROVIDER: "mock"
+          VERIFICATION_ENABLED: "false"
+          LEAD_MIN_SCORE: "50"
+          OPENAI_API_KEY: ""
+          OPENAI_MODEL: "gpt-4o-mini"
+          APP_ENV: "development"
+          ADMIN_PASSWORD: "testpass"
+          OUTREACH_PROVIDER: "mock"
+          OUTREACH_ENABLED: "false"
+          OUTREACH_MAX_PER_HOUR: "20"
+          OUTREACH_QUIET_HOURS_START: "20:00"
+          OUTREACH_QUIET_HOURS_END: "09:00"
+          OUTREACH_TIMEZONE: "Asia/Almaty"
+          FOLLOW_UP_ENABLED: "true"
+          FOLLOW_UP_DELAY_HOURS: "48"
+          FOLLOW_UP_MAX_COUNT: "2"
+          OUTREACH_MODE: "sandbox"
+          OUTREACH_SANDBOX_ALLOWLIST: "+77000000001,+77000000002"
+          WHATSAPP_APP_SECRET: ""
+          WHATSAPP_WEBHOOK_VERIFY_TOKEN: "test_verify_token"
+          WHATSAPP_SERVICE_WINDOW_HOURS: "24"
+          WHATSAPP_ALLOW_MOCK_WEBHOOKS: "true"
+        run: |
+          pytest tests/ -v --cov=app --cov-report=xml --cov-fail-under=80 \
+            --cov-config=.coveragerc -m "not slow"
+
+  docker-smoke:
+    name: Docker Smoke Test
     runs-on: ubuntu-latest
-    needs: [test, docker-build]
+    needs: [lint, unit-tests, postgres-tests]
     steps:
       - uses: actions/checkout@v4
 
@@ -75,8 +211,19 @@ jobs:
 
       - name: Run smoke test
         run: |
+          docker compose up --build -d
           chmod +x scripts/smoke_test.sh
           bash scripts/smoke_test.sh
+
+      - name: Simulate WhatsApp sandbox webhook
+        run: |
+          sleep 5
+          # Test webhook verification
+          curl -sf "http://localhost:8000/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=test_verify_token&hub.challenge=test_challenge_123"
+          # Test inbound webhook (with mock signature bypass)
+          curl -sf -X POST http://localhost:8000/webhooks/whatsapp \
+            -H "Content-Type: application/json" \
+            -d '{"entry":[{"changes":[{"value":{"messages":[{"id":"wamid.test123","from":"77071234567","type":"text","text":{"body":"Hello"}}]}}]}]}'
 
       - name: Collect logs on failure
         if: failure()
@@ -85,3 +232,36 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose down -v 2>/dev/null || true
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pip-audit bandit
+
+      - name: Run pip-audit
+        run: pip-audit -r requirements.txt
+
+      - name: Run Bandit
+        run: bandit -r app -f json -o bandit-report.json || true
+
+      - name: Secret scan
+        run: |
+          pip install trufflehog
+          trufflehog filesystem . --no-verification --fail || true
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json

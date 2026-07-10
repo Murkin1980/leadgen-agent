@@ -9,7 +9,7 @@ from app.database import Base
 class OutreachEvent(Base):
     __tablename__ = "outreach_events"
 
-    id: Mapped[int] = mapped_column(String(50), primary_key=True)
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
     message_id: Mapped[str] = mapped_column(
         String(50), ForeignKey("outreach_messages.id"), nullable=False
     )

@@ -19,7 +19,7 @@ from app.models.landing_page import (
 )
 from app.models.lead import Lead
 from app.models.content_generation import ContentGeneration
-from app.security import generate_csrf_token, validate_csrf_token
+from app.security import generate_csrf_token, validate_csrf_token, verify_webhook_signature, log_audit_event
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -36,9 +36,8 @@ def _require_auth(request: Request):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-def _require_csrf(request: Request):
-    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token", "")
-    if not token or not validate_csrf_token(token):
+def _require_csrf(csrf_token: str = ""):
+    if not csrf_token or not validate_csrf_token(csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
 
@@ -160,6 +159,7 @@ def admin_landing_detail(landing_id: str, request: Request, db: Session = Depend
     for v in versions:
         versions_html += f"<li>v{v.version_number} — {v.change_source} — {v.change_note or ''}</li>"
 
+    csrf = generate_csrf_token()
     preview = ""
     if lp.preview_url:
         preview = f'<iframe src="{lp.preview_url}" width="100%" height="600" frameborder="0"></iframe>'
@@ -179,8 +179,10 @@ def admin_landing_detail(landing_id: str, request: Request, db: Session = Depend
 <div class="box"><b>Validation:</b><br>{validation_info or 'No validation data'}</div>
 <div class="box"><b>Versions:</b><ul>{versions_html or '<li>No versions</li>'}</ul></div>
 <form method="post" action="/admin/landings/{landing_id}/approve" style="display:inline">
+<input type="hidden" name="csrf_token" value="{csrf}">
 <button class="btn btn-approve" type="submit">Approve</button></form>
 <form method="post" action="/admin/landings/{landing_id}/reject" style="display:inline">
+<input type="hidden" name="csrf_token" value="{csrf}">
 <input name="reason" placeholder="Reason" value="Не подходит">
 <button class="btn btn-reject" type="submit">Reject</button></form>
 {preview}
@@ -190,10 +192,13 @@ def admin_landing_detail(landing_id: str, request: Request, db: Session = Depend
 
 @admin_router.post("/landings/{landing_id}/approve")
 def admin_approve_landing(
-    landing_id: str, request: Request, db: Session = Depends(get_db)
+    landing_id: str,
+    request: Request,
+    csrf_token: str = Form(""),
+    db: Session = Depends(get_db),
 ):
     _require_auth(request)
-    _require_csrf(request)
+    _require_csrf(csrf_token)
     lp = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not lp:
         raise HTTPException(status_code=404, detail="Landing not found")
@@ -208,10 +213,14 @@ def admin_approve_landing(
 
 @admin_router.post("/landings/{landing_id}/reject")
 def admin_reject_landing(
-    landing_id: str, request: Request, reason: str = Form("Не подходит"), db: Session = Depends(get_db)
+    landing_id: str,
+    request: Request,
+    reason: str = Form("Не подходит"),
+    csrf_token: str = Form(""),
+    db: Session = Depends(get_db),
 ):
     _require_auth(request)
-    _require_csrf(request)
+    _require_csrf(csrf_token)
     lp = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not lp:
         raise HTTPException(status_code=404, detail="Landing not found")
@@ -301,12 +310,15 @@ def admin_campaign_detail(campaign_id: str, request: Request, db: Session = Depe
         OutreachMessage.campaign_id == campaign_id
     ).order_by(OutreachMessage.created_at.desc()).all()
     rows = ""
+    csrf = generate_csrf_token()
     for m in messages:
         body_preview = (m.body[:80] + "...") if len(m.body) > 80 else m.body
         body_preview = body_preview.replace("<", "&lt;")
         approve_btn = ""
         if m.status == "needs_review":
-            approve_btn = f' <a href="/admin/messages/{m.id}/approve">approve</a>'
+            approve_btn = f'''<form method="post" action="/admin/messages/{m.id}/approve" style="display:inline">
+<input type="hidden" name="csrf_token" value="{csrf}">
+<button style="background:#16a34a;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer" type="submit">approve</button></form>'''
         rows += f"""<tr>
 <td>{m.id}</td><td>{m.lead_id}</td><td>{m.channel}</td>
 <td><pre style="margin:0;font-size:12px">{body_preview}</pre></td>
@@ -325,9 +337,15 @@ th{{background:#1f2937;color:#fff}}a{{color:#2563eb}}</style></head><body>
     return HTMLResponse(content=html)
 
 
-@admin_router.get("/messages/{message_id}/approve")
-def admin_approve_message(message_id: str, request: Request, db: Session = Depends(get_db)):
+@admin_router.post("/messages/{message_id}/approve")
+def admin_approve_message(
+    message_id: str,
+    request: Request,
+    csrf_token: str = Form(""),
+    db: Session = Depends(get_db),
+):
     _require_auth(request)
+    _require_csrf(csrf_token)
     from app.models.campaign import OutreachMessage, MessageStatus
     from datetime import datetime, timezone
     msg = db.query(OutreachMessage).filter(OutreachMessage.id == message_id).first()

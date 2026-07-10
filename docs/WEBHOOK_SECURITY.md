@@ -12,8 +12,14 @@ and security controls.
    `sha256={hex_digest}`.
 2. The server computes `HMAC-SHA256(raw_body, APP_SECRET)` and compares
    using constant-time comparison.
-3. If the signature is invalid, the request is rejected (200 response to
-   avoid Meta retry storms, but the event is not processed).
+3. If the signature is invalid:
+   - Returns HTTP 200 with `{"processed": false, "reason": "invalid_signature"}`
+     (to avoid Meta retry storms)
+   - **Does not create** `InboundMessage` records
+   - **Does not create** `OutreachEvent` records
+   - **Does not modify** any `Lead` records
+   - Increments `webhook_invalid_signature_total` metric
+   - Writes audit/security log (without payload or phone number)
 
 ## Signature Verification Flow
 
@@ -34,6 +40,7 @@ Request arrives
   via `str.removeprefix("sha256=")`.
 - **Missing secret**: Returns 403 in production; allows in development when
   `WHATSAPP_ALLOW_MOCK_WEBHOOKS=true`.
+- **Centralized verification**: Single source of truth in `app/security/webhook_signature.py`
 
 ## Meta Webhook Verification (GET)
 

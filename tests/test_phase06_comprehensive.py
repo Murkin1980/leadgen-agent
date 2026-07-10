@@ -292,21 +292,23 @@ class TestWebhookSignature:
         assert verify_webhook_signature(b'{}', "sig", "") is False
 
     def test_whatsapp_routes_signature_check(self):
-        from app.api.whatsapp_routes import _verify_signature
+        from app.security import verify_whatsapp_signature
         raw = b'{"entry":[]}'
         secret = "test_secret"
         sig = "sha256=" + hmac.HMAC(secret.encode(), raw, hashlib.sha256).hexdigest()
-        with patch("app.api.whatsapp_routes.settings") as mock:
+        with patch("app.security.webhook_signature.settings") as mock:
             mock.whatsapp_app_secret = secret
             mock.app_env = "development"
-            assert _verify_signature(raw, sig) is True
+            mock.whatsapp_allow_mock_webhooks = True
+            assert verify_whatsapp_signature(raw, sig) is True
 
     def test_whatsapp_routes_no_signature_rejected(self):
-        from app.api.whatsapp_routes import _verify_signature
-        with patch("app.api.whatsapp_routes.settings") as mock:
+        from app.security import verify_whatsapp_signature
+        with patch("app.security.webhook_signature.settings") as mock:
             mock.whatsapp_app_secret = "some_secret"
             mock.app_env = "production"
-            assert _verify_signature(b'{}', None) is False
+            mock.whatsapp_allow_mock_webhooks = False
+            assert verify_whatsapp_signature(b'{}', None) is False
 
 
 # ── 10. Webhook idempotency ──────────────────────────────────────
@@ -374,7 +376,7 @@ class TestInboundReply:
                 }]
             }}]}]
         }
-        with patch("app.api.whatsapp_routes._verify_signature", return_value=True):
+        with patch("app.security.verify_whatsapp_signature", return_value=True):
             resp = client.post("/webhooks/whatsapp", json=payload)
         assert resp.status_code == 200
         data = resp.json()
@@ -421,7 +423,7 @@ class TestInboundReply:
                 }]
             }}]}]
         }
-        with patch("app.api.whatsapp_routes._verify_signature", return_value=True):
+        with patch("app.security.verify_whatsapp_signature", return_value=True):
             resp = client.post("/webhooks/whatsapp", json=payload)
         assert resp.status_code == 200
 

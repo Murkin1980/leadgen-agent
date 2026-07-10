@@ -17,6 +17,7 @@ from app.models.event import OutreachEvent
 from app.models.lead import ConsentStatus, Lead
 from app.models.whatsapp import InboundMessage, InboundMessageStatus, WhatsAppTemplate, WhatsAppTemplateStatus
 from app.outreach.phone import PhoneNumberError, PhoneNumberService
+from app.security.webhook_signature import verify_whatsapp_signature
 
 router = APIRouter()
 
@@ -36,15 +37,6 @@ class ConsentPayload(BaseModel):
     consent_notes: str | None = None
 
 
-def _verify_signature(raw: bytes, signature: str | None) -> bool:
-    if not settings.whatsapp_app_secret:
-        return settings.app_env != "production" and settings.whatsapp_allow_mock_webhooks
-    if not signature or not signature.startswith("sha256="):
-        return False
-    expected = hmac.HMAC(settings.whatsapp_app_secret.encode(), raw, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(signature.removeprefix("sha256="), expected)
-
-
 @router.get("/webhooks/whatsapp")
 def verify_whatsapp_webhook(
     hub_mode: str = Query(alias="hub.mode"),
@@ -59,7 +51,7 @@ def verify_whatsapp_webhook(
 @router.post("/webhooks/whatsapp")
 async def receive_whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     raw = await request.body()
-    if not _verify_signature(raw, request.headers.get("X-Hub-Signature-256")):
+    if not verify_whatsapp_signature(raw, request.headers.get("X-Hub-Signature-256")):
         return {"status": "ok", "changed": 0, "processed": False, "reason": "invalid_signature"}
     payload = json.loads(raw or b"{}")
     changed = 0
