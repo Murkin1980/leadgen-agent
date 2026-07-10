@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-leadgen}
+      POSTGRES_USER: ${POSTGRES_USER:-leadgen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leadgen}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leadgen} -d ${POSTGRES_DB:-leadgen}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - sites:/app/sites
+    restart: unless-stopped
+
+  collector:
+    build: .
+    env_file: .env
+    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "collect"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - sites:/app/sites
+    restart: unless-stopped
+
+  enricher:
+    build: .
+    env_file: .env
+    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "enrich"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - sites:/app/sites
+    restart: unless-stopped
+
+  generator:
+    build: .
+    env_file: .env
+    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "generate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - sites:/app/sites
+    restart: unless-stopped
+
+  publisher:
+    build: .
+    env_file: .env
+    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "publish"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - sites:/app/sites
+    restart: unless-stopped
+
+  preview:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./sites/public:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  sites:

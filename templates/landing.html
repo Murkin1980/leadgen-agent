@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ profile.meta.title }}</title>
+    <meta name="description" content="{{ profile.meta.description }}">
+    <meta property="og:title" content="{{ profile.meta.title }}">
+    <meta property="og:description" content="{{ profile.meta.description }}">
+    <meta property="og:type" content="website">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+    <div class="container">
+        <h1>{{ profile.hero.title }}</h1>
+        <p>{{ profile.hero.subtitle }}</p>
+        {% if profile.company.phone %}
+        <a href="tel:{{ profile.company.phone }}" class="btn btn-accent">{{ profile.hero.cta_text }}</a>
+        {% endif %}
+    </div>
+</header>
+
+<section id="services">
+    <div class="container">
+        <h2 class="section-title">Наши услуги</h2>
+        <div class="services-grid">
+            {% for service in profile.services %}
+            <div class="service-card">
+                <h3>{{ service.title }}</h3>
+                <p>{{ service.description }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="advantages" id="advantages">
+    <div class="container">
+        <h2 class="section-title">Почему выбирают нас</h2>
+        <div class="advantages-grid">
+            {% for item in profile.advantages %}
+            <div class="advantage">
+                <span class="icon">✓</span>
+                <span>{{ item }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section id="steps">
+    <div class="container">
+        <h2 class="section-title">Как мы работаем</h2>
+        <div class="steps-list">
+            <div class="step">
+                <div class="step-num">1</div>
+                <div>
+                    <strong>Заявка и замер</strong>
+                    <p>Вы оставляете заявку, наш мастер приезжает на замер бесплатно</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <div>
+                    <strong>Проект и согласование</strong>
+                    <p>Создаём 3D-проект, подбираем материалы и утверждаем с вами</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <div>
+                    <strong>Изготовление</strong>
+                    <p>Производим мебель в срок от 10 до 21 рабочего дня</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-num">4</div>
+                <div>
+                    <strong>Доставка и монтаж</strong>
+                    <p>Доставляем и аккуратно устанавливаем вашу мебель</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="cta-section">
+    <div class="container">
+        <h2>{{ profile.hero.cta_text }}</h2>
+        <p>Оставьте заявку и получите расчёт стоимости за 15 минут</p>
+        {% if profile.company.phone %}
+        <a href="tel:{{ profile.company.phone }}" class="btn btn-white">{{ profile.hero.cta_text }}</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="contact-section" id="contacts">
+    <div class="container">
+        <h2 class="section-title">Контакты</h2>
+        <div class="contact-grid">
+            {% if profile.contacts.phone %}
+            <div class="contact-item">
+                <h3>Телефон</h3>
+                <p><a href="tel:{{ profile.contacts.phone }}">{{ profile.contacts.phone }}</a></p>
+            </div>
+            {% endif %}
+            {% if profile.contacts.address %}
+            <div class="contact-item">
+                <h3>Адрес</h3>
+                <p>{{ profile.contacts.address }}, {{ profile.contacts.city }}</p>
+            </div>
+            {% endif %}
+            {% if profile.company.whatsapp_url %}
+            <div class="contact-item">
+                <h3>WhatsApp</h3>
+                <p><a href="{{ profile.company.whatsapp_url }}" target="_blank">Написать в WhatsApp</a></p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% if profile.company.whatsapp_url %}
+<a href="{{ profile.company.whatsapp_url }}" class="whatsapp-float" target="_blank" aria-label="WhatsApp">
+    💬
+</a>
+{% endif %}
+
+<footer>
+    <div class="container">
+        <p>&copy; 2025 {{ profile.company.name }}. {{ profile.company.city }}.</p>
+    </div>
+</footer>
+
+</body>
+</html>

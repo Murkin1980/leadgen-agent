@@ -1,0 +1,164 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.landing_page import LandingPage, LandingStatus
+from app.models.lead import Lead, LeadStatus
+from app.models.search_job import SearchJob, JobStatus
+from app.publisher.publisher import publish_site
+from app.schemas.job import JobCreate, JobResponse
+from app.schemas.lead import LeadResponse
+from app.schemas.landing import LandingResponse
+from app.workers.connection import redis_conn
+
+router = APIRouter()
+
+
+@router.get("/health")
+def health_check():
+    pg_ok = True
+    redis_ok = True
+    try:
+        from app.database import engine
+
+        with engine.connect() as conn:
+            conn.execute(__import__("sqlalchemy").text("SELECT 1"))
+    except Exception:
+        pg_ok = False
+    try:
+        redis_conn.ping()
+    except Exception:
+        redis_ok = False
+
+    status = "ok" if pg_ok and redis_ok else "degraded"
+    return {"status": status, "postgres": pg_ok, "redis": redis_ok}
+
+
+@router.post("/jobs", response_model=JobResponse)
+def create_job(payload: JobCreate, db: Session = Depends(get_db)):
+    job = SearchJob(
+        city=payload.city,
+        category=payload.category,
+        limit=payload.limit,
+        status=JobStatus.pending.value,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    from rq import Queue
+
+    q = Queue("collect", connection=redis_conn)
+    q.enqueue("app.workers.collector_worker.run_collector", job.id)
+
+    return job
+
+
+@router.get("/jobs/{job_id}", response_model=JobResponse)
+def get_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/leads", response_model=list[LeadResponse])
+def list_leads(
+    city: str | None = None,
+    category: str | None = None,
+    status: str | None = None,
+    has_website: bool | None = None,
+    limit: int = Query(default=50, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Lead)
+    if city:
+        q = q.filter(Lead.city == city)
+    if category:
+        q = q.filter(Lead.category == category)
+    if status:
+        q = q.filter(Lead.status == status)
+    if has_website is not None:
+        q = q.filter(Lead.has_website == has_website)
+    return q.order_by(Lead.id.desc()).offset(offset).limit(limit).all()
+
+
+@router.get("/leads/{lead_id}", response_model=LeadResponse)
+def get_lead(lead_id: int, db: Session = Depends(get_db)):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+
+@router.post("/leads/{lead_id}/generate", response_model=LandingResponse)
+def generate_landing(lead_id: int, db: Session = Depends(get_db)):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    from app.generation.template import TemplateTextGenerationAdapter
+    import json
+    import uuid
+
+    adapter = TemplateTextGenerationAdapter()
+    profile_data = adapter.generate_profile(lead)
+    landing_id = str(uuid.uuid4())[:12]
+
+    landing = LandingPage(
+        id=landing_id,
+        lead_id=lead.id,
+        slug=lead.slug or "",
+        title=profile_data.get("meta", {}).get("title", lead.name),
+        profile_json=json.dumps(profile_data, ensure_ascii=False),
+        status=LandingStatus.draft.value,
+    )
+    db.add(landing)
+    lead.status = LeadStatus.generated.value
+    db.commit()
+    db.refresh(landing)
+
+    from rq import Queue
+
+    q = Queue("publish", connection=redis_conn)
+    q.enqueue(
+        "app.workers.publisher_worker.run_publisher",
+        [landing_id],
+        0,
+    )
+
+    return landing
+
+
+@router.post("/landings/{landing_id}/publish", response_model=LandingResponse)
+def publish_landing(landing_id: str, db: Session = Depends(get_db)):
+    landing = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
+    if not landing:
+        raise HTTPException(status_code=404, detail="Landing not found")
+
+    from app.landing.renderer import render_landing, save_landing
+    from app.landing.schema import LandingProfile
+    import json
+
+    try:
+        profile_data = json.loads(landing.profile_json)
+        profile = LandingProfile(**profile_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid profile: {e}")
+
+    html = render_landing(profile, landing.slug)
+    save_landing(landing.slug, html, profile)
+    preview_url = publish_site(landing.slug)
+
+    landing.preview_url = preview_url
+    landing.status = LandingStatus.published.value
+    landing.output_path = f"sites/public/{landing.slug}"
+
+    lead = db.query(Lead).filter(Lead.id == landing.lead_id).first()
+    if lead:
+        lead.status = LeadStatus.published.value
+
+    db.commit()
+    db.refresh(landing)
+    return landing
