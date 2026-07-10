@@ -6,7 +6,6 @@ from app.database import SessionLocal
 from app.enrichment.enricher import enrich_lead
 from app.models.lead import Lead, LeadStatus
 from app.models.search_job import SearchJob, JobStatus
-from app.workers.connection import redis_conn
 
 
 def run_enricher(lead_ids: list[int], job_id: int) -> None:
@@ -34,14 +33,6 @@ def run_enricher(lead_ids: list[int], job_id: int) -> None:
 
         job.status = JobStatus.generating.value
         db.commit()
-
-        if enriched_ids:
-            from rq import Queue
-
-            q = Queue("generate", connection=redis_conn)
-            q.enqueue(
-                "app.workers.generator_worker.run_generator", enriched_ids, job_id
-            )
 
     except Exception as exc:
         job = db.query(SearchJob).filter(SearchJob.id == job_id).first()

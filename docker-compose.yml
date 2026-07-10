@@ -198,17 +198,5 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  outreach-status:
-    profiles: ["advanced"]
-    build: .
-    env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "outreach_status"]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
 volumes:
   pgdata:
