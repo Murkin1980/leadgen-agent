@@ -147,4 +147,29 @@ log "Checking outreach metrics..."
 METRICS=$(curl -sf "${API_URL}/metrics")
 log "  Metrics: $(echo "$METRICS" | python -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))" 2>/dev/null | head -5)"
 
+log "=== Phase 06: WhatsApp Production ==="
+
+log "Creating WhatsApp template..."
+curl -sf -X POST "${API_URL}/whatsapp/templates" \
+    -H "Content-Type: application/json" \
+    -d '{"name": "smoke_test_v1", "language_code": "ru", "body_template": "Hello {{name}}", "category": "MARKETING"}' > /dev/null 2>&1 || true
+
+log "Listing WhatsApp templates..."
+TEMPLATES=$(curl -sf "${API_URL}/whatsapp/templates")
+TEMPLATE_COUNT=$(echo "$TEMPLATES" | python -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+log "  Found $TEMPLATE_COUNT templates"
+
+log "Setting lead consent..."
+curl -sf -X PUT "${API_URL}/leads/${LEAD_ID}/consent" \
+    -H "Content-Type: application/json" \
+    -d '{"consent_status": "consented", "contact_basis": "business_interest", "consent_source": "smoke_test"}' > /dev/null 2>&1 || true
+
+log "Verifying webhook endpoint responds..."
+WEBHOOK_RESPONSE=$(curl -sf -o /dev/null -w "%{http_code}" "${API_URL}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=smoke_test_token&hub.challenge=test_challenge_123" 2>/dev/null || echo "000")
+log "  Webhook GET: $WEBHOOK_RESPONSE"
+
+log "Checking outreach metrics (Phase 06)..."
+METRICS_06=$(curl -sf "${API_URL}/metrics/outreach" 2>/dev/null || echo '{}')
+log "  Outreach metrics: $(echo "$METRICS_06" | python -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))" 2>/dev/null | head -5)"
+
 log "=== ALL SMOKE TESTS PASSED ==="

@@ -50,10 +50,10 @@ def verify_webhook_signature(
 ) -> bool:
     if not signature or not secret:
         return False
-    expected = hmac.new(
+    expected = hmac.HMAC(
         secret.encode(), payload, hashlib.sha256
     ).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    return hmac.compare_digest(expected, signature.removeprefix("sha256="))
 
 
 def log_audit_event(

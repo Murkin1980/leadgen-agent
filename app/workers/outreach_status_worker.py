@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -50,7 +51,7 @@ def run_outreach_status_checker() -> int:
                         msg.failed_at = datetime.now(timezone.utc)
 
                     event = OutreachEvent(
-                        id=str(hash(f"{msg.id}_{new_status}_{datetime.now(timezone.utc).timestamp()}"))[:50],
+                        id=str(uuid.uuid4())[:50],
                         message_id=msg.id,
                         event_type=f"status_{new_status}",
                         provider_event_id=msg.provider_message_id,

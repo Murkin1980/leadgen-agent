@@ -21,6 +21,12 @@ os.environ["OUTREACH_TIMEZONE"] = "Asia/Almaty"
 os.environ["FOLLOW_UP_ENABLED"] = "true"
 os.environ["FOLLOW_UP_DELAY_HOURS"] = "48"
 os.environ["FOLLOW_UP_MAX_COUNT"] = "2"
+os.environ["OUTREACH_MODE"] = "sandbox"
+os.environ["OUTREACH_SANDBOX_ALLOWLIST"] = "+77000000001,+77000000002"
+os.environ["WHATSAPP_APP_SECRET"] = ""
+os.environ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] = "test_verify_token"
+os.environ["WHATSAPP_SERVICE_WINDOW_HOURS"] = "24"
+os.environ["WHATSAPP_ALLOW_MOCK_WEBHOOKS"] = "true"
 
 import pytest
 from sqlalchemy import create_engine

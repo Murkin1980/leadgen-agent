@@ -41,7 +41,7 @@ def _verify_signature(raw: bytes, signature: str | None) -> bool:
         return settings.app_env != "production" and settings.whatsapp_allow_mock_webhooks
     if not signature or not signature.startswith("sha256="):
         return False
-    expected = hmac.new(settings.whatsapp_app_secret.encode(), raw, hashlib.sha256).hexdigest()
+    expected = hmac.HMAC(settings.whatsapp_app_secret.encode(), raw, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature.removeprefix("sha256="), expected)
 
 
@@ -60,7 +60,7 @@ def verify_whatsapp_webhook(
 async def receive_whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     raw = await request.body()
     if not _verify_signature(raw, request.headers.get("X-Hub-Signature-256")):
-        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+        return {"status": "ok", "changed": 0, "processed": False, "reason": "invalid_signature"}
     payload = json.loads(raw or b"{}")
     changed = 0
     for entry in payload.get("entry", []):

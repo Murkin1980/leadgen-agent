@@ -134,6 +134,37 @@ def get_follow_up_candidates() -> list[OutreachMessage]:
         db.close()
 
 
+def is_sandbox_allowed(recipient: str) -> bool:
+    mode = settings.outreach_mode
+    if mode == "disabled":
+        return False
+    if mode == "sandbox":
+        allowlist = settings.sandbox_allowlist
+        return recipient in allowlist
+    return True
+
+
+def cancel_pending_follow_ups(db, lead_id: int) -> int:
+    pending = (
+        db.query(OutreachMessage)
+        .filter(
+            OutreachMessage.lead_id == lead_id,
+            OutreachMessage.status.in_([
+                MessageStatus.needs_review.value,
+                MessageStatus.approved.value,
+                MessageStatus.queued.value,
+            ]),
+        )
+        .all()
+    )
+    count = 0
+    for msg in pending:
+        msg.status = MessageStatus.cancelled.value
+        msg.error_message = "Cancelled: lead replied"
+        count += 1
+    return count
+
+
 def get_outreach_metrics() -> dict:
     db = SessionLocal()
     try:

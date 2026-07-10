@@ -504,13 +504,8 @@ def generate_follow_up(
 
 
 # --- Webhooks ---
-
-@router.post("/webhooks/whatsapp")
-async def webhook_whatsapp(request: Request):
-    payload = await request.json()
-    from app.outreach.webhook_handler import process_webhook_event
-    result = process_webhook_event("whatsapp", payload)
-    return result
+# WhatsApp webhooks are handled by whatsapp_routes.py
+# (signed verification + inbound message handling + template management)
 
 
 @router.post("/webhooks/email")

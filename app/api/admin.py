@@ -19,6 +19,7 @@ from app.models.landing_page import (
 )
 from app.models.lead import Lead
 from app.models.content_generation import ContentGeneration
+from app.security import generate_csrf_token, validate_csrf_token
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -33,6 +34,12 @@ def _check_auth(request: Request) -> bool:
 def _require_auth(request: Request):
     if not _check_auth(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _require_csrf(request: Request):
+    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token", "")
+    if not token or not validate_csrf_token(token):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
 
 @admin_router.get("/login", response_class=HTMLResponse)
@@ -186,6 +193,7 @@ def admin_approve_landing(
     landing_id: str, request: Request, db: Session = Depends(get_db)
 ):
     _require_auth(request)
+    _require_csrf(request)
     lp = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not lp:
         raise HTTPException(status_code=404, detail="Landing not found")
@@ -203,6 +211,7 @@ def admin_reject_landing(
     landing_id: str, request: Request, reason: str = Form("Не подходит"), db: Session = Depends(get_db)
 ):
     _require_auth(request)
+    _require_csrf(request)
     lp = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not lp:
         raise HTTPException(status_code=404, detail="Landing not found")

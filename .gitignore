@@ -3,6 +3,7 @@
 __pycache__/
 .pytest_cache/
 test.db
+test_debug.db
 *.egg-info/
 dist/
 build/
