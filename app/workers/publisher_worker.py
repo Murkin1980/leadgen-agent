@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ from app.models.landing_page import LandingPage, LandingStatus
 from app.models.lead import Lead, LeadStatus
 from app.models.search_job import SearchJob, JobStatus
 from app.publisher.publisher import publish_site
+
+logger = logging.getLogger(__name__)
 
 
 def run_publisher(landing_ids: list[str], job_id: int) -> None:
@@ -49,15 +52,14 @@ def run_publisher(landing_ids: list[str], job_id: int) -> None:
                 preview_url = publish_site(landing.slug)
                 landing.preview_url = preview_url
                 landing.status = LandingStatus.published.value
-                landing.output_path = str(
-                    f"sites/public/{landing.slug}"
-                )
+                landing.output_path = f"sites/public/{landing.slug}"
 
                 lead = db.query(Lead).filter(Lead.id == landing.lead_id).first()
                 if lead:
                     lead.status = LeadStatus.published.value
 
                 db.commit()
+                logger.info("Published landing %s for job %d", lid, job_id)
             except Exception:
                 landing.status = LandingStatus.failed.value
                 db.commit()
@@ -72,5 +74,6 @@ def run_publisher(landing_ids: list[str], job_id: int) -> None:
             job.status = JobStatus.failed.value
             job.error_message = str(exc)
             db.commit()
+        logger.exception("Publisher failed for job %d", job_id)
     finally:
         db.close()

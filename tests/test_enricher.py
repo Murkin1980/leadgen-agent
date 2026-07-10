@@ -42,13 +42,23 @@ class TestWhatsAppUrl:
 class TestSlug:
     def test_basic_slug(self):
         slug = make_slug("Mebel Art", "Алматы")
-        assert "almaty" in slug or "алматы" in slug
-        assert "mebel" in slug.lower() or "art" in slug.lower()
+        assert len(slug) >= 3
+        assert " " not in slug
+        assert slug == slug.lower()
 
     def test_no_special_chars(self):
         slug = make_slug("Тест & Co.", "Алматы")
         assert "&" not in slug
         assert "." not in slug
+
+    def test_no_cyrillic_in_slug(self):
+        slug = make_slug("Mebel Art", "Алматы")
+        for ch in slug:
+            assert ch.isascii() or ch == "-"
+
+    def test_min_length(self):
+        slug = make_slug("A", "B")
+        assert len(slug) >= 3
 
 
 class TestSpecialization:

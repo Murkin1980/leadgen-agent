@@ -7,7 +7,6 @@ test.db
 dist/
 build/
 sites/drafts/
-sites/public/
 node_modules/
 .wrangler/
 package-lock.json

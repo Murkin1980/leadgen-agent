@@ -11,13 +11,14 @@ class LandingStatus(str, enum.Enum):
     draft = "draft"
     generated = "generated"
     published = "published"
+    deployed = "deployed"
     failed = "failed"
 
 
 class LandingPage(Base):
     __tablename__ = "landing_pages"
 
-    id: Mapped[int] = mapped_column(String(50), primary_key=True)
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
     lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id"), nullable=False)
     slug: Mapped[str] = mapped_column(String(500), nullable=False)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)

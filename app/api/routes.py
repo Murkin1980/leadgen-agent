@@ -1,3 +1,7 @@
+import json
+import logging
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -5,13 +9,14 @@ from app.database import get_db
 from app.models.landing_page import LandingPage, LandingStatus
 from app.models.lead import Lead, LeadStatus
 from app.models.search_job import SearchJob, JobStatus
-from app.publisher.publisher import publish_site
+from app.publisher.publisher import publish_site, validate_slug
 from app.schemas.job import JobCreate, JobResponse
 from app.schemas.lead import LeadResponse
 from app.schemas.landing import LandingResponse
 from app.workers.connection import redis_conn
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health")
@@ -20,9 +25,10 @@ def health_check():
     redis_ok = True
     try:
         from app.database import engine
+        import sqlalchemy
 
         with engine.connect() as conn:
-            conn.execute(__import__("sqlalchemy").text("SELECT 1"))
+            conn.execute(sqlalchemy.text("SELECT 1"))
     except Exception:
         pg_ok = False
     try:
@@ -99,8 +105,6 @@ def generate_landing(lead_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Lead not found")
 
     from app.generation.template import TemplateTextGenerationAdapter
-    import json
-    import uuid
 
     adapter = TemplateTextGenerationAdapter()
     profile_data = adapter.generate_profile(lead)
@@ -139,13 +143,17 @@ def publish_landing(landing_id: str, db: Session = Depends(get_db)):
 
     from app.landing.renderer import render_landing, save_landing
     from app.landing.schema import LandingProfile
-    import json
 
     try:
         profile_data = json.loads(landing.profile_json)
         profile = LandingProfile(**profile_data)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid profile: {e}")
+
+    try:
+        validate_slug(landing.slug)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     html = render_landing(profile, landing.slug)
     save_landing(landing.slug, html, profile)
@@ -162,3 +170,28 @@ def publish_landing(landing_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(landing)
     return landing
+
+
+@router.post("/jobs/{job_id}/deploy")
+def deploy_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    published = (
+        db.query(LandingPage)
+        .filter(LandingPage.status == LandingStatus.published.value)
+        .count()
+    )
+    if published == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No published landings to deploy",
+        )
+
+    from rq import Queue
+
+    q = Queue("publish", connection=redis_conn)
+    q.enqueue("app.workers.deployer_worker.run_deployer", job_id)
+
+    return {"status": "deploying", "job_id": job_id, "landings_to_deploy": published}

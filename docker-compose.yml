@@ -27,18 +27,27 @@ services:
       retries: 5
     restart: unless-stopped
 
+  migrate:
+    build: .
+    env_file: .env
+    command: ["python", "-c", "import subprocess, sys; subprocess.run(['alembic', 'upgrade', 'head'], check=True)"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build: .
     env_file: .env
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     volumes:
-      - sites:/app/sites
+      - ./sites:/app/sites
     restart: unless-stopped
 
   collector:
@@ -46,12 +55,12 @@ services:
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "collect"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     volumes:
-      - sites:/app/sites
+      - ./sites:/app/sites
     restart: unless-stopped
 
   enricher:
@@ -59,12 +68,12 @@ services:
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "enrich"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     volumes:
-      - sites:/app/sites
+      - ./sites:/app/sites
     restart: unless-stopped
 
   generator:
@@ -72,12 +81,12 @@ services:
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "generate"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     volumes:
-      - sites:/app/sites
+      - ./sites:/app/sites
     restart: unless-stopped
 
   publisher:
@@ -85,12 +94,12 @@ services:
     env_file: .env
     command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "publish"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     volumes:
-      - sites:/app/sites
+      - ./sites:/app/sites
     restart: unless-stopped
 
   preview:
@@ -99,8 +108,9 @@ services:
       - "8080:80"
     volumes:
       - ./sites/public:/usr/share/nginx/html:ro
+    depends_on:
+      - publisher
     restart: unless-stopped
 
 volumes:
   pgdata:
-  sites:

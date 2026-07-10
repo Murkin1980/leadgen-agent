@@ -5,26 +5,31 @@
 ## Архитектура
 
 ```
-POST /jobs → Redis Queue (collect) → Collector Worker
-                                         ↓ Lead IDs
-                                    Redis Queue (enrich) → Enricher Worker
-                                                             ↓ Lead IDs
-                                                        Redis Queue (generate) → Generator Worker
-                                                                                    ↓ LandingPage IDs
-                                                                               Redis Queue (publish) → Publisher Worker
-                                                                                                         ↓
-                                                                                                    sites/public/
+POST /jobs → Redis [collect] → CollectorWorker
+                                  ↓ Lead IDs
+                            Redis [enrich] → EnricherWorker
+                                               ↓ Lead IDs
+                                          Redis [generate] → GeneratorWorker
+                                                               ↓ LandingPage IDs
+                                                          Redis [publish] → PublisherWorker
+                                                                                ↓
+                                                                           sites/public/{slug}/
+                                                                                ↓
+                                                                           Nginx :8080 (preview)
+                                                                                ↓
+                                                                           Cloudflare Pages (deploy)
 ```
 
 ### Сервисы
 
 | Сервис | Описание |
 |---|---|
+| `migrate` | Применяет Alembic миграции при старте |
 | `api` | FastAPI — REST API |
 | `collector` | RQ worker — сбор компаний |
 | `enricher` | RQ worker — обогащение лидов |
 | `generator` | RQ worker — генерация JSON и HTML |
-| `publisher` | RQ worker — публикация в sites/public |
+| `publisher` | RQ worker — копирование в sites/public |
 | `postgres` | PostgreSQL 16 |
 | `redis` | Redis 7 |
 | `preview` | Nginx — статический сервер лендингов |
@@ -34,9 +39,10 @@ POST /jobs → Redis Queue (collect) → Collector Worker
 ```bash
 cp .env.example .env
 docker compose up --build -d
-docker compose exec api alembic upgrade head
 curl http://localhost:8000/health
 ```
+
+Миграции применяются автоматически через сервис `migrate`.
 
 ### Создание задания
 
@@ -64,27 +70,20 @@ curl "http://localhost:8000/leads?city=Алматы&status=published"
 
 ### Просмотр лендинга
 
-Откройте в браузере:
-
 ```
 http://localhost:8080/{slug}/
 ```
 
-## Структура проекта
+### Деплой на Cloudflare
 
+```bash
+bash scripts/deploy_cloudflare.sh
 ```
-app/
-├── api/routes.py          # FastAPI endpoints
-├── collector/             # Сбор данных (mock + 2GIS stub)
-├── enrichment/            # Обогащение лидов
-├── generation/            # Генерация JSON-профиля (template + OpenAI stub)
-├── landing/               # JSON-схема и HTML-рендеринг
-├── publisher/             # Публикация в sites/public
-├── workers/               # RQ workers
-├── models/                # SQLAlchemy модели
-├── schemas/               # Pydantic schemas
-├── config.py              # Настройки
-└── database.py            # Подключение к БД
+
+Или через API — деплой всех опубликованных лендингов:
+
+```bash
+curl -X POST http://localhost:8000/jobs/1/deploy
 ```
 
 ## API Endpoints
@@ -94,6 +93,7 @@ app/
 | GET | `/health` | Проверка здоровья |
 | POST | `/jobs` | Создание задания |
 | GET | `/jobs/{id}` | Получение задания |
+| POST | `/jobs/{id}/deploy` | Деплой на Cloudflare |
 | GET | `/leads` | Список лидов |
 | GET | `/leads/{id}` | Карточка лида |
 | POST | `/leads/{id}/generate` | Повторная генерация |
@@ -109,19 +109,43 @@ app/
 | `TEXT_GENERATOR_PROVIDER` | `template` или `openai` | `template` |
 | `OPENAI_API_KEY` | Ключ OpenAI | — |
 | `PUBLIC_BASE_URL` | Базовый URL для превью | `http://localhost:8080` |
+| `CLOUDFLARE_PAGES_PROJECT` | Имя проекта Cloudflare Pages | `leadgen-agent` |
+| `CLOUDFLARE_PAGES_BRANCH` | Ветка для деплоя | `master` |
 
 ## Тесты
 
 ```bash
 pip install -r requirements.txt
+pip install pytest
 pytest tests/ -v
+```
+
+## CI
+
+GitHub Actions автоматически запускает тесты и проверку Docker Compose при пуше в `master`.
+
+## Структура проекта
+
+```
+app/
+├── api/routes.py          # FastAPI endpoints
+├── collector/             # Сбор данных (mock + 2GIS stub)
+├── enrichment/            # Обогащение лидов
+├── generation/            # Генерация JSON-профиля (template + OpenAI stub)
+├── landing/               # JSON-схема и HTML-рендеринг
+├── publisher/             # Публикация в sites/public
+├── workers/               # RQ workers (collector, enricher, generator, publisher, deployer)
+├── models/                # SQLAlchemy модели
+├── schemas/               # Pydantic schemas
+├── config.py              # Настройки
+└── database.py            # Подключение к БД
 ```
 
 ## Оставшиеся задачи
 
 - [ ] Подключить настоящий 2GIS API (замена MockCollectorAdapter)
 - [ ] Подключить OpenAI для генерации профилей (замена TemplateTextGenerationAdapter)
-- [ ] Деплой лендингов через Cloudflare Pages
-- [ ] Автоматический push в GitHub через publish_to_git.sh
-- [ ] Мониторинг и логирование
-- [ ] Фронтенд для управления заданиями
+- [ ] Настроить Cloudflare Pages production branch
+- [ ] Добавить структурированные логи
+- [ ] Добавить retry и dead-letter обработку
+- [ ] Интеграционные тесты Docker pipeline

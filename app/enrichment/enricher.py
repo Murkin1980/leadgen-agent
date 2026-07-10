@@ -53,6 +53,8 @@ CTA_OPTIONS = [
     "Заказать проект",
 ]
 
+SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]*[a-z0-9]$")
+
 
 def normalize_phone(phone: str | None) -> str | None:
     if not phone:
@@ -81,6 +83,14 @@ def make_slug(name: str, city: str) -> str:
     raw = re.sub(r"[^a-z0-9а-яё\s-]", "", raw)
     raw = re.sub(r"[\s]+", "-", raw.strip())
     raw = re.sub(r"-+", "-", raw)
+    raw = raw.strip("-")
+    if len(raw) < 3:
+        raw = f"company-{raw}" if raw else "company"
+    if not SLUG_RE.match(raw):
+        raw = re.sub(r"[^a-z0-9-]", "", raw)
+        raw = re.sub(r"-+", "-", raw).strip("-")
+        if len(raw) < 3:
+            raw = f"company-{raw}" if raw else "company"
     return raw
 
 
