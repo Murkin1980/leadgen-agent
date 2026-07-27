@@ -4,6 +4,7 @@ import re
 import unicodedata
 
 from app.models.lead import Lead
+from app.outreach.phone import PhoneNumberError, PhoneNumberService
 
 SERVICES_MAP: dict[str, list[str]] = {
     "мебель": [
@@ -77,16 +78,21 @@ def transliterate(text: str) -> str:
 
 
 def normalize_phone(phone: str | None) -> str | None:
-    if not phone:
+    """Normalize to E.164, or None if the number isn't a valid KZ number.
+
+    Delegates to PhoneNumberService (the same validated normalizer used
+    for outreach) instead of a separate, looser implementation. The old
+    version fell through to returning the raw input unchanged for
+    anything that didn't match its three patterns -- e.g.
+    normalize_phone("abc") returned "abc" -- which then flowed into
+    make_whatsapp_url() as a broken "https://wa.me/" link (or worse,
+    "https://wa.me/123" for garbage digit strings) and into the landing
+    page's displayed phone number.
+    """
+    try:
+        return PhoneNumberService.normalize(phone)
+    except PhoneNumberError:
         return None
-    digits = re.sub(r"\D", "", phone)
-    if digits.startswith("7") and len(digits) == 11:
-        return f"+{digits}"
-    if digits.startswith("8") and len(digits) == 11:
-        return f"+7{digits[1:]}"
-    if len(digits) == 10:
-        return f"+7{digits}"
-    return phone
 
 
 def make_whatsapp_url(phone: str | None) -> str | None:
@@ -113,6 +119,15 @@ def make_slug(name: str, city: str, unique_id: int | str | None = None) -> str:
         raw = re.sub(r"-+", "-", raw).strip("-")
         if len(raw) < 3:
             raw = f"company-{raw}" if raw else "company"
+
+    # Cap length well under the ~255-byte filesystem path-component limit
+    # (sites/drafts/{slug}/ uses the slug as a directory name directly).
+    # Long legal-entity names ("Товарищество с ограниченной
+    # ответственностью ...") are common enough in real data that this isn't
+    # a hypothetical edge case.
+    max_base_len = 80
+    if len(raw) > max_base_len:
+        raw = raw[:max_base_len].rstrip("-")
 
     # Always disambiguate with the lead's own id: two companies can share a
     # name (or both transliterate to the same base slug), and each lead's
