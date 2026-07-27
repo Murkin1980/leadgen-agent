@@ -178,12 +178,6 @@ def admin_landing_detail(landing_id: str, request: Request, db: Session = Depend
     if not lp:
         raise HTTPException(status_code=404, detail="Landing not found")
     lead = db.query(Lead).filter(Lead.id == lp.lead_id).first()
-    profile_data = {}
-    if lp.profile_json:
-        try:
-            profile_data = json.loads(lp.profile_json)
-        except (json.JSONDecodeError, AttributeError):
-            pass
 
     lead_info = ""
     if lead:

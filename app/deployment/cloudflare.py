@@ -103,6 +103,8 @@ class CloudflarePagesDeploymentAdapter:
 
         url = self._parse_url(stdout_excerpt) or settings.cloudflare_public_url
 
+        logger.info("Cloudflare Pages deployment finished in %.2fs: url=%s", elapsed, url)
+
         return DeploymentResult(
             success=True,
             url=url,

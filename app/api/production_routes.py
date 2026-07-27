@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -93,12 +94,15 @@ def readiness(db: Session = Depends(get_db)):
     all_ok = all(c.get("ok", False) for c in checks.values())
     status_code = 200 if all_ok else 503
 
-    return {
-        "status": "ready" if all_ok else "not_ready",
-        "checks": checks,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "version": "0.7.0",
-    }
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ready" if all_ok else "not_ready",
+            "checks": checks,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "0.7.0",
+        },
+    )
 
 
 # ── Template Sync ─────────────────────────────────────────────────

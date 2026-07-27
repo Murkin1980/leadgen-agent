@@ -100,7 +100,7 @@ class TestSandboxAllowlist:
             mock.outreach_enabled = True
             mock.sandbox_allowlist = {PH1}
             from app.workers.outreach_sender_worker import _production_policy_allows
-            ok, reason = _production_policy_allows(lead, PH1)
+            ok, _reason = _production_policy_allows(lead, PH1)
             assert ok is True
 
     def test_blocked_in_sandbox(self):
@@ -122,7 +122,7 @@ class TestSandboxAllowlist:
             mock.outreach_mode = "disabled"
             mock.outreach_enabled = False
             from app.workers.outreach_sender_worker import _production_policy_allows
-            ok, reason = _production_policy_allows(lead, PH1)
+            ok, _reason = _production_policy_allows(lead, PH1)
             assert ok is False
 
 
@@ -172,7 +172,7 @@ class TestConsentBlocking:
             mock.outreach_enabled = True
             mock.sandbox_allowlist = set()
             from app.workers.outreach_sender_worker import _production_policy_allows
-            ok, reason = _production_policy_allows(lead, PH4)
+            ok, _reason = _production_policy_allows(lead, PH4)
             assert ok is True
 
 

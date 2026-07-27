@@ -55,7 +55,7 @@ def job_with_leads_and_landings(db):
 
 class TestDeploymentOwnership:
     def test_only_job_landings_marked_deployed(self, db, job_with_leads_and_landings):
-        job, leads, landings = job_with_leads_and_landings
+        job, _leads, _landings = job_with_leads_and_landings
 
         other_suffix = str(uuid.uuid4())[:8]
         other_lead = Lead(

@@ -91,7 +91,7 @@ def run_outreach_generator(campaign_id: str) -> None:
         campaign.completed_at = datetime.now(timezone.utc)
         db.commit()
 
-    except Exception as exc:
+    except Exception:
         logger.exception("Outreach generator failed for campaign %s", campaign_id)
         try:
             campaign = db.query(OutreachCampaign).filter(

@@ -11,6 +11,7 @@ from app.collector.exceptions import (
     CollectorAuthError,
     CollectorConfigError,
     CollectorNetworkError,
+    CollectorNotFoundError,
     CollectorRateLimitError,
     CollectorValidationError,
 )
