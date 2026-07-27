@@ -49,7 +49,6 @@ def run_publisher(landing_ids: list[str], job_id: int) -> None:
             try:
                 html = render_landing(profile, landing.slug)
                 save_landing(landing.slug, html, profile)
-                landing.status = LandingStatus.generated.value
                 db.commit()
             except Exception:
                 landing.status = LandingStatus.failed.value
