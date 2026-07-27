@@ -1,6 +1,5 @@
 import json
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.models.content_generation import ContentGeneration, ContentGenerationStatus
 from app.models.landing_page import (
@@ -54,11 +53,11 @@ class TestContentGenerationModel:
         db.commit()
 
         gen.status = ContentGenerationStatus.running.value
-        gen.started_at = datetime.now(timezone.utc)
+        gen.started_at = datetime.now(UTC)
         db.commit()
 
         gen.status = ContentGenerationStatus.succeeded.value
-        gen.completed_at = datetime.now(timezone.utc)
+        gen.completed_at = datetime.now(UTC)
         gen.output_json = json.dumps({"test": True})
         db.commit()
         db.refresh(gen)
@@ -146,7 +145,9 @@ class TestLandingPageVersionModel:
                 id=f"v-{i}",
                 landing_page_id=landing.id,
                 version_number=i,
-                change_source=ChangeSource.manual.value if i > 1 else ChangeSource.template.value,
+                change_source=ChangeSource.manual.value
+                if i > 1
+                else ChangeSource.template.value,
                 profile_json=json.dumps({"v": i}),
             )
             db.add(v)
@@ -260,7 +261,7 @@ class TestReviewWorkflow:
 
         landing.review_status = ReviewStatus.approved.value
         landing.status = LandingStatus.approved.value
-        landing.approved_at = datetime.now(timezone.utc)
+        landing.approved_at = datetime.now(UTC)
         landing.approved_by = "admin"
         db.commit()
         db.refresh(landing)

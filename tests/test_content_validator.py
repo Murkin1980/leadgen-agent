@@ -1,10 +1,7 @@
-import json
-import pytest
-
-from app.generation.base import GeneratedProfile, GeneratedProfileClaim
+from app.generation.base import GeneratedProfile
 from app.generation.context import GenerationContext
-from app.generation.validator import GeneratedContentValidator, ValidationResult
 from app.generation.mock import MockTextGenerationAdapter
+from app.generation.validator import GeneratedContentValidator
 
 
 class TestValidatorSchemaChecks:
@@ -75,7 +72,12 @@ class TestValidatorPhoneConsistency:
         profile = GeneratedProfile(
             data={
                 "meta": {"title": "T", "description": "D"},
-                "company": {"name": "Co", "city": "City", "phone": "+77009998877", "whatsapp_url": ""},
+                "company": {
+                    "name": "Co",
+                    "city": "City",
+                    "phone": "+77009998877",
+                    "whatsapp_url": "",
+                },
                 "hero": {"title": "H", "subtitle": "S", "cta_text": "CTA"},
                 "contacts": {"phone": "+77009998877"},
                 "services": [],
@@ -101,9 +103,7 @@ class TestValidatorCityConsistency:
                 "advantages": [],
             }
         )
-        ctx = GenerationContext(
-            company_name="Co", city="Алматы", category="Cat"
-        )
+        ctx = GenerationContext(company_name="Co", city="Алматы", category="Cat")
         validator = GeneratedContentValidator()
         result = validator.validate(profile, ctx)
         assert not result.is_valid
@@ -111,9 +111,7 @@ class TestValidatorCityConsistency:
 
     def test_matching_city_passes(self):
         adapter = MockTextGenerationAdapter()
-        ctx = GenerationContext(
-            company_name="Co", city="Алматы", category="Cat"
-        )
+        ctx = GenerationContext(company_name="Co", city="Алматы", category="Cat")
         profile = adapter.generate(ctx)
         validator = GeneratedContentValidator()
         result = validator.validate(profile, ctx)
@@ -128,7 +126,9 @@ class TestValidatorForbiddenContent:
                 "company": {"name": "Co", "city": "City"},
                 "hero": {"title": "H", "subtitle": "S", "cta_text": "CTA"},
                 "contacts": {},
-                "services": [{"title": "S1", "description": "<script>alert(1)</script>"}],
+                "services": [
+                    {"title": "S1", "description": "<script>alert(1)</script>"}
+                ],
                 "advantages": [],
             }
         )
@@ -179,7 +179,11 @@ class TestValidatorForbiddenContent:
                 "services": [],
                 "advantages": [],
                 "claims": [
-                    {"text": "10 лет опыта", "source_field": "unknown", "verified": False}
+                    {
+                        "text": "10 лет опыта",
+                        "source_field": "unknown",
+                        "verified": False,
+                    }
                 ],
             }
         )

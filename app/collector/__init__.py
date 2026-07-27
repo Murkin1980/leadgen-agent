@@ -8,7 +8,11 @@ from app.collector.exceptions import (
     CollectorRateLimitError,
     CollectorValidationError,
 )
-from app.collector.factory import create_collector, get_available_providers, validate_provider
+from app.collector.factory import (
+    create_collector,
+    get_available_providers,
+    validate_provider,
+)
 
 __all__ = [
     "CollectedCompany",

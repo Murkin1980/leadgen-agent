@@ -1,4 +1,3 @@
-import pytest
 from app.config import settings
 
 
@@ -7,8 +6,9 @@ class TestDeploymentProviderSelection:
         original = settings.deployment_provider
         try:
             settings.deployment_provider = "mock"
-            from app.workers.deployer_worker import _get_adapter
             from app.deployment.mock import MockDeploymentAdapter
+            from app.workers.deployer_worker import _get_adapter
+
             adapter = _get_adapter()
             assert isinstance(adapter, MockDeploymentAdapter)
         finally:
@@ -18,8 +18,9 @@ class TestDeploymentProviderSelection:
         original = settings.deployment_provider
         try:
             settings.deployment_provider = "cloudflare"
-            from app.workers.deployer_worker import _get_adapter
             from app.deployment.cloudflare import CloudflarePagesDeploymentAdapter
+            from app.workers.deployer_worker import _get_adapter
+
             adapter = _get_adapter()
             assert isinstance(adapter, CloudflarePagesDeploymentAdapter)
         finally:

@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,7 @@ from app.landing.renderer import render_landing, save_landing
 from app.landing.schema import LandingProfile
 from app.models.landing_page import LandingPage, LandingStatus, ReviewStatus
 from app.models.lead import Lead, LeadStatus
-from app.models.search_job import SearchJob, JobStatus
+from app.models.search_job import JobStatus, SearchJob
 from app.publisher.publisher import publish_site
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ def run_publisher(landing_ids: list[str], job_id: int) -> None:
                 db.commit()
 
         job.status = JobStatus.completed.value
-        job.completed_at = datetime.now(timezone.utc)
+        job.completed_at = datetime.now(UTC)
         db.commit()
 
     except Exception as exc:

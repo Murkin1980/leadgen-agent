@@ -47,9 +47,7 @@ class TestRunContentGenerator:
         assert gen.landing_page_id is not None
 
         landing = (
-            db.query(LandingPage)
-            .filter(LandingPage.id == gen.landing_page_id)
-            .first()
+            db.query(LandingPage).filter(LandingPage.id == gen.landing_page_id).first()
         )
         assert landing is not None
         assert landing.slug == lead.slug

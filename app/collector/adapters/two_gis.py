@@ -63,7 +63,9 @@ class TwoGisCollectorAdapter:
                     raise CollectorAuthError("Invalid API key")
 
                 if response.status_code == 429:
-                    retry_after = float(response.headers.get("Retry-After", self.retry_delay))
+                    retry_after = float(
+                        response.headers.get("Retry-After", self.retry_delay)
+                    )
                     raise CollectorRateLimitError(retry_after=retry_after)
 
                 if response.status_code == 404:
@@ -80,7 +82,7 @@ class TwoGisCollectorAdapter:
                 raise
             except CollectorRateLimitError as e:
                 if attempt < self.max_retries - 1:
-                    wait_time = e.retry_after or self.retry_delay * (2 ** attempt)
+                    wait_time = e.retry_after or self.retry_delay * (2**attempt)
                     logger.warning(f"Rate limited, waiting {wait_time}s")
                     time.sleep(wait_time)
                     continue
@@ -88,7 +90,7 @@ class TwoGisCollectorAdapter:
             except (CollectorNetworkError, httpx.RequestError) as e:
                 last_error = e
                 if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
+                    wait_time = self.retry_delay * (2**attempt)
                     logger.warning(f"Request failed, retrying in {wait_time}s: {e}")
                     time.sleep(wait_time)
                     continue

@@ -1,4 +1,5 @@
 """Pilot safeguards: PILOT_MODE controls, limits, kill switch."""
+
 from __future__ import annotations
 
 import logging
@@ -46,7 +47,10 @@ def pilot_validate_lead_count(db: Session) -> tuple[bool, str]:
 
     count = db.query(Lead).filter(Lead.status.notin_(["deleted"])).count()
     if count >= PILOT_MAX_LEADS:
-        return False, f"Cannot add more leads: pilot limit of {PILOT_MAX_LEADS} reached (currently {count})"
+        return (
+            False,
+            f"Cannot add more leads: pilot limit of {PILOT_MAX_LEADS} reached (currently {count})",
+        )
     return True, f"{count}/{PILOT_MAX_LEADS} leads"
 
 
@@ -66,9 +70,7 @@ def pilot_validate_message(
         return False, f"Pilot total message limit of {PILOT_MAX_TOTAL_MESSAGES} reached"
 
     lead_messages = (
-        db.query(OutreachMessage)
-        .filter(OutreachMessage.lead_id == lead_id)
-        .count()
+        db.query(OutreachMessage).filter(OutreachMessage.lead_id == lead_id).count()
     )
     if lead_messages >= PILOT_MAX_MESSAGES_PER_LEAD:
         return False, f"Per-lead message limit of {PILOT_MAX_MESSAGES_PER_LEAD} reached"
@@ -86,17 +88,22 @@ def pilot_kill_switch(db: Session, actor: str = "admin") -> dict[str, Any]:
     cancelled = (
         db.query(OutreachMessage)
         .filter(
-            OutreachMessage.status.in_([
-                MessageStatus.needs_review.value,
-                MessageStatus.approved.value,
-                MessageStatus.queued.value,
-                MessageStatus.sending.value,
-            ])
+            OutreachMessage.status.in_(
+                [
+                    MessageStatus.needs_review.value,
+                    MessageStatus.approved.value,
+                    MessageStatus.queued.value,
+                    MessageStatus.sending.value,
+                ]
+            )
         )
         .update({"status": MessageStatus.cancelled.value})
     )
     log_audit_event(
-        db, "pilot_kill_switch", "pilot", "all",
+        db,
+        "pilot_kill_switch",
+        "pilot",
+        "all",
         actor=actor,
         details={"cancelled_messages": cancelled},
     )
@@ -112,11 +119,19 @@ def pilot_kill_switch(db: Session, actor: str = "admin") -> dict[str, Any]:
 def pilot_status(db: Session) -> dict[str, Any]:
     """Get current pilot mode status."""
     is_active = is_pilot_mode()
-    lead_count = db.query(Lead).filter(Lead.status.notin_(["deleted"])).count() if is_active else 0
+    lead_count = (
+        db.query(Lead).filter(Lead.status.notin_(["deleted"])).count()
+        if is_active
+        else 0
+    )
     message_count = db.query(OutreachMessage).count() if is_active else 0
     pending = (
         db.query(OutreachMessage)
-        .filter(OutreachMessage.status.in_(["needs_review", "approved", "queued", "sending"]))
+        .filter(
+            OutreachMessage.status.in_(
+                ["needs_review", "approved", "queued", "sending"]
+            )
+        )
         .count()
         if is_active
         else 0
@@ -150,7 +165,9 @@ def pilot_report(db: Session) -> dict[str, Any]:
 
     delivered = sum(1 for m in messages if m.status == MessageStatus.delivered.value)
     failed = sum(1 for m in messages if m.status == MessageStatus.failed.value)
-    dead_letter = sum(1 for m in messages if m.status == MessageStatus.dead_letter.value)
+    dead_letter = sum(
+        1 for m in messages if m.status == MessageStatus.dead_letter.value
+    )
 
     return {
         "pilot_mode": True,
@@ -159,5 +176,7 @@ def pilot_report(db: Session) -> dict[str, Any]:
         "delivered": delivered,
         "failed": failed,
         "dead_letter": dead_letter,
-        "delivery_rate": f"{(delivered / len(messages) * 100):.1f}%" if messages else "N/A",
+        "delivery_rate": f"{(delivered / len(messages) * 100):.1f}%"
+        if messages
+        else "N/A",
     }

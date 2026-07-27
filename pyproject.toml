@@ -1,0 +1,26 @@
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# BLE001 (blind `except Exception`) is used deliberately throughout the
+# background workers and health/readiness endpoints: a worker or an
+# aggregate health check that crashes on one unexpected exception type is
+# worse than one that logs it and reports a degraded status. Narrowing
+# every one of these to specific exception types would require guessing
+# at exhaustive exception lists for third-party clients (httpx, psycopg,
+# redis, boto3-style SDKs) with no real safety benefit.
+ignore = ["BLE001"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's `Depends(...)`, `Query(...)`, etc. as parameter defaults is the
+# framework's documented, intended pattern -- not the "call in a mutable
+# default" bug B008 exists to catch. Marking them immutable stops ruff from
+# flagging every route signature in the codebase.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Path",
+]

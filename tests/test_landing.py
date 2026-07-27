@@ -1,8 +1,7 @@
 import json
 
-import pytest
-from app.landing.schema import LandingProfile
 from app.landing.renderer import render_landing, save_landing
+from app.landing.schema import LandingProfile
 
 
 class TestLandingSchema:
@@ -14,7 +13,11 @@ class TestLandingSchema:
             "services": [{"title": "S1", "description": "D1"}],
             "advantages": ["A1"],
             "contacts": {"phone": "+7700"},
-            "theme": {"style": "modern", "primary_color": "#000", "accent_color": "#fff"},
+            "theme": {
+                "style": "modern",
+                "primary_color": "#000",
+                "accent_color": "#fff",
+            },
         }
         profile = LandingProfile(**data)
         assert profile.meta.title == "Test"
@@ -28,7 +31,11 @@ class TestLandingSchema:
             "services": [],
             "advantages": [],
             "contacts": {},
-            "theme": {"style": "modern", "primary_color": "#000", "accent_color": "#fff"},
+            "theme": {
+                "style": "modern",
+                "primary_color": "#000",
+                "accent_color": "#fff",
+            },
         }
         profile = LandingProfile(**data)
         serialized = profile.model_dump_json()
@@ -41,11 +48,20 @@ class TestRendering:
     def _make_profile(self):
         return LandingProfile(
             meta={"title": "Test Landing", "description": "Test desc"},
-            company={"name": "TestCo", "city": "Алматы", "phone": "+77001112233", "whatsapp_url": "https://wa.me/77001112233"},
+            company={
+                "name": "TestCo",
+                "city": "Алматы",
+                "phone": "+77001112233",
+                "whatsapp_url": "https://wa.me/77001112233",
+            },
             hero={"title": "Hero Title", "subtitle": "Subtitle", "cta_text": "Call"},
             services=[{"title": "Service 1", "description": "Desc 1"}],
             advantages=["Advantage 1", "Advantage 2"],
-            contacts={"phone": "+77001112233", "city": "Алматы", "whatsapp_url": "https://wa.me/77001112233"},
+            contacts={
+                "phone": "+77001112233",
+                "city": "Алматы",
+                "whatsapp_url": "https://wa.me/77001112233",
+            },
         )
 
     def test_renders_html(self):

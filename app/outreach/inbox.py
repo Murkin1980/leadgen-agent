@@ -1,14 +1,14 @@
 """Operator inbox: conversation list, unread counts, history, mark handled."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.models.campaign import OutreachMessage, MessageStatus
+from app.models.campaign import MessageStatus, OutreachMessage
 from app.models.lead import Lead
 from app.models.whatsapp import InboundMessage, InboundMessageStatus
 
@@ -28,8 +28,10 @@ def list_conversations(
     if lead_id is not None:
         leads_q = leads_q.filter(Lead.id == lead_id)
 
-    leads = leads_q.order_by(Lead.last_inbound_at.desc()).offset(offset).limit(limit).all()
-    now = datetime.now(timezone.utc)
+    leads = (
+        leads_q.order_by(Lead.last_inbound_at.desc()).offset(offset).limit(limit).all()
+    )
+    now = datetime.now(UTC)
     conversations = []
 
     for lead in leads:
@@ -43,11 +45,13 @@ def list_conversations(
             db.query(OutreachMessage)
             .filter(
                 OutreachMessage.lead_id == lead.id,
-                OutreachMessage.status.in_([
-                    MessageStatus.sent.value,
-                    MessageStatus.delivered.value,
-                    MessageStatus.read.value,
-                ]),
+                OutreachMessage.status.in_(
+                    [
+                        MessageStatus.sent.value,
+                        MessageStatus.delivered.value,
+                        MessageStatus.read.value,
+                    ]
+                ),
             )
             .order_by(OutreachMessage.sent_at.desc())
             .first()
@@ -66,24 +70,36 @@ def list_conversations(
             lead.service_window_expires_at and lead.service_window_expires_at > now
         )
         service_window_expires = (
-            lead.service_window_expires_at.isoformat() if lead.service_window_expires_at else None
+            lead.service_window_expires_at.isoformat()
+            if lead.service_window_expires_at
+            else None
         )
 
-        conversations.append({
-            "lead_id": lead.id,
-            "lead_name": lead.name,
-            "lead_phone": lead.phone,
-            "last_inbound_at": last_inbound.received_at.isoformat() if last_inbound else None,
-            "last_inbound_text": last_inbound.text_body[:200] if last_inbound and last_inbound.text_body else None,
-            "last_outbound_at": last_outbound.sent_at.isoformat() if last_outbound else None,
-            "last_outbound_body": last_outbound.body[:200] if last_outbound else None,
-            "unread_count": unread_count,
-            "service_window_active": service_window_active,
-            "service_window_expires": service_window_expires,
-            "consent_status": lead.consent_status,
-            "do_not_contact": lead.do_not_contact,
-            "stage": lead.stage,
-        })
+        conversations.append(
+            {
+                "lead_id": lead.id,
+                "lead_name": lead.name,
+                "lead_phone": lead.phone,
+                "last_inbound_at": last_inbound.received_at.isoformat()
+                if last_inbound
+                else None,
+                "last_inbound_text": last_inbound.text_body[:200]
+                if last_inbound and last_inbound.text_body
+                else None,
+                "last_outbound_at": last_outbound.sent_at.isoformat()
+                if last_outbound
+                else None,
+                "last_outbound_body": last_outbound.body[:200]
+                if last_outbound
+                else None,
+                "unread_count": unread_count,
+                "service_window_active": service_window_active,
+                "service_window_expires": service_window_expires,
+                "consent_status": lead.consent_status,
+                "do_not_contact": lead.do_not_contact,
+                "stage": lead.stage,
+            }
+        )
 
     if has_unread is True:
         conversations = [c for c in conversations if c["unread_count"] > 0]
@@ -116,23 +132,29 @@ def get_conversation_history(
 
     messages = []
     for im in inbounds:
-        messages.append({
-            "direction": "inbound",
-            "channel": "whatsapp",
-            "text": im.text_body,
-            "timestamp": im.received_at.isoformat() if im.received_at else None,
-            "status": im.status,
-            "message_id": im.id,
-        })
+        messages.append(
+            {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "text": im.text_body,
+                "timestamp": im.received_at.isoformat() if im.received_at else None,
+                "status": im.status,
+                "message_id": im.id,
+            }
+        )
     for om in outbounds:
-        messages.append({
-            "direction": "outbound",
-            "channel": om.channel,
-            "text": om.body,
-            "timestamp": om.sent_at.isoformat() if om.sent_at else (om.created_at.isoformat() if om.created_at else None),
-            "status": om.status,
-            "message_id": om.id,
-        })
+        messages.append(
+            {
+                "direction": "outbound",
+                "channel": om.channel,
+                "text": om.body,
+                "timestamp": om.sent_at.isoformat()
+                if om.sent_at
+                else (om.created_at.isoformat() if om.created_at else None),
+                "status": om.status,
+                "message_id": om.id,
+            }
+        )
 
     messages.sort(key=lambda m: m["timestamp"] or "", reverse=True)
     return messages[:limit]
@@ -144,7 +166,7 @@ def mark_handled(db: Session, message_id: str) -> bool:
     if not msg:
         return False
     msg.status = InboundMessageStatus.handled.value
-    msg.processed_at = datetime.now(timezone.utc)
+    msg.processed_at = datetime.now(UTC)
     db.commit()
     db.refresh(msg)
     return True
@@ -157,7 +179,7 @@ def can_reply_manually(db: Session, lead_id: int) -> tuple[bool, str]:
         return False, "Lead not found"
     if lead.do_not_contact:
         return False, "Lead is do_not_contact"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if lead.service_window_expires_at and lead.service_window_expires_at > now:
         return True, "Service window active"
     return False, "Service window expired — use template reply"
@@ -180,7 +202,6 @@ def send_template_reply(
         return False, "Lead is do_not_contact"
 
     import uuid
-    from datetime import datetime, timezone as tz
 
     msg = OutreachMessage(
         id=str(uuid.uuid4())[:12],

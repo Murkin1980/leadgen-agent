@@ -19,11 +19,14 @@ class ValidationResult:
         return len(self.errors) == 0
 
     def to_json(self) -> str:
-        return json.dumps({
-            "errors": self.errors,
-            "warnings": self.warnings,
-            "is_valid": self.is_valid,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "errors": self.errors,
+                "warnings": self.warnings,
+                "is_valid": self.is_valid,
+            },
+            ensure_ascii=False,
+        )
 
 
 FORBIDDEN_CLAIM_PATTERNS = [
@@ -91,7 +94,9 @@ class GeneratedContentValidator:
         for pattern in FORBIDDEN_CLAIM_PATTERNS:
             matches = re.findall(pattern, all_text, re.IGNORECASE)
             if matches:
-                result.warnings.append(f"Potentially unsupported claim detected: {matches[0]}")
+                result.warnings.append(
+                    f"Potentially unsupported claim detected: {matches[0]}"
+                )
 
         claims = data.get("claims", [])
         if isinstance(claims, list):
@@ -127,21 +132,27 @@ class GeneratedContentValidator:
         self, data: dict, context: GenerationContext, result: ValidationResult
     ) -> None:
         company_name = data.get("company", {}).get("name", "")
-        if context.company_name and company_name:
-            if company_name.lower().strip() != context.company_name.lower().strip():
-                result.warnings.append(
-                    f"Company name differs from lead: '{company_name}' vs '{context.company_name}'"
-                )
+        if (
+            context.company_name
+            and company_name
+            and company_name.lower().strip() != context.company_name.lower().strip()
+        ):
+            result.warnings.append(
+                f"Company name differs from lead: '{company_name}' vs '{context.company_name}'"
+            )
 
     def _validate_city_consistency(
         self, data: dict, context: GenerationContext, result: ValidationResult
     ) -> None:
-        city = data.get("company", {}).get("city") or data.get("contacts", {}).get("city")
-        if context.city and city:
-            if city.lower().strip() != context.city.lower().strip():
-                result.errors.append(
-                    f"City mismatch: '{city}' vs '{context.city}'"
-                )
+        city = data.get("company", {}).get("city") or data.get("contacts", {}).get(
+            "city"
+        )
+        if (
+            context.city
+            and city
+            and city.lower().strip() != context.city.lower().strip()
+        ):
+            result.errors.append(f"City mismatch: '{city}' vs '{context.city}'")
 
     def _validate_no_html_in_text(self, data: dict, result: ValidationResult) -> None:
         text_fields = self._get_text_fields(data)
@@ -163,7 +174,9 @@ class GeneratedContentValidator:
         text_fields = self._get_text_fields(data)
         for path, value in text_fields:
             if len(str(value)) > self.max_field_length:
-                result.errors.append(f"Field {path} exceeds max length ({self.max_field_length})")
+                result.errors.append(
+                    f"Field {path} exceeds max length ({self.max_field_length})"
+                )
 
     def _validate_hero_and_cta(self, data: dict, result: ValidationResult) -> None:
         hero = data.get("hero", {})
@@ -172,7 +185,9 @@ class GeneratedContentValidator:
         if not hero.get("cta_text", "").strip():
             result.errors.append("CTA text is empty")
 
-    def _validate_no_duplicate_services(self, data: dict, result: ValidationResult) -> None:
+    def _validate_no_duplicate_services(
+        self, data: dict, result: ValidationResult
+    ) -> None:
         services = data.get("services", [])
         if isinstance(services, list):
             titles = [s.get("title", "") for s in services if isinstance(s, dict)]
@@ -185,7 +200,7 @@ class GeneratedContentValidator:
 
     def _collect_text(self, data: dict) -> str:
         parts = []
-        for key, value in data.items():
+        for value in data.values():
             if isinstance(value, str):
                 parts.append(value)
             elif isinstance(value, dict):

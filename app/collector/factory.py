@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from app.config import settings
 from app.collector.exceptions import CollectorConfigError
+from app.config import settings
 
 if TYPE_CHECKING:
     from app.collector.adapter import CollectorAdapter
@@ -18,11 +18,13 @@ def create_collector(provider: str | None = None) -> CollectorAdapter:
 
     if provider == "mock":
         from app.collector.mock import MockCollectorAdapter
+
         logger.info("Creating MockCollectorAdapter")
         return MockCollectorAdapter()
 
     elif provider == "two_gis":
         from app.collector.adapters.two_gis import TwoGisCollectorAdapter
+
         logger.info("Creating TwoGisCollectorAdapter")
         return TwoGisCollectorAdapter(
             api_key=settings.two_gis_api_key,
@@ -34,6 +36,7 @@ def create_collector(provider: str | None = None) -> CollectorAdapter:
 
     elif provider == "csv":
         from app.collector.adapters.csv import CsvCollectorAdapter
+
         logger.info("Creating CsvCollectorAdapter")
         return CsvCollectorAdapter(
             file_path=settings.csv_file_path,

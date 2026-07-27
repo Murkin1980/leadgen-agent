@@ -55,9 +55,14 @@ class CloudflarePagesDeploymentAdapter:
             )
 
         cmd = [
-            wrangler, "pages", "deploy", str(public_dir),
-            "--project-name", project,
-            "--branch", branch,
+            wrangler,
+            "pages",
+            "deploy",
+            str(public_dir),
+            "--project-name",
+            project,
+            "--branch",
+            branch,
             "--commit-dirty=true",
         ]
 
@@ -66,7 +71,9 @@ class CloudflarePagesDeploymentAdapter:
             "CLOUDFLARE_ACCOUNT_ID": account_id,
         }
 
-        logger.info("Deploying to Cloudflare Pages: project=%s branch=%s", project, branch)
+        logger.info(
+            "Deploying to Cloudflare Pages: project=%s branch=%s", project, branch
+        )
 
         try:
             start = time.monotonic()
@@ -77,6 +84,7 @@ class CloudflarePagesDeploymentAdapter:
                 timeout=DEPLOY_TIMEOUT,
                 env={**dict(__import__("os").environ), **env},
                 shell=False,
+                check=False,  # returncode is inspected explicitly below
             )
             elapsed = time.monotonic() - start
         except subprocess.TimeoutExpired:
@@ -103,7 +111,9 @@ class CloudflarePagesDeploymentAdapter:
 
         url = self._parse_url(stdout_excerpt) or settings.cloudflare_public_url
 
-        logger.info("Cloudflare Pages deployment finished in %.2fs: url=%s", elapsed, url)
+        logger.info(
+            "Cloudflare Pages deployment finished in %.2fs: url=%s", elapsed, url
+        )
 
         return DeploymentResult(
             success=True,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -12,7 +12,7 @@ class StructuredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_data: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -28,11 +28,31 @@ class StructuredFormatter(logging.Formatter):
             k: v
             for k, v in record.__dict__.items()
             if k not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__
-            and k not in ("message", "msg", "args", "exc_info", "exc_text", "stack_info",
-                          "name", "levelname", "levelno", "pathname", "filename",
-                          "module", "funcName", "lineno", "asctime", "msecs",
-                          "relativeCreated", "thread", "threadName", "processName",
-                          "process", "created")
+            and k
+            not in (
+                "message",
+                "msg",
+                "args",
+                "exc_info",
+                "exc_text",
+                "stack_info",
+                "name",
+                "levelname",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "funcName",
+                "lineno",
+                "asctime",
+                "msecs",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "processName",
+                "process",
+                "created",
+            )
         }
         if extra_fields:
             log_data["extra"] = extra_fields

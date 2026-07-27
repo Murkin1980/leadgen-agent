@@ -30,7 +30,7 @@ class GeneratedProfile:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "GeneratedProfile":
+    def from_dict(cls, d: dict) -> GeneratedProfile:
         raw_claims = d.pop("claims", [])
         claims = [
             GeneratedProfileClaim(

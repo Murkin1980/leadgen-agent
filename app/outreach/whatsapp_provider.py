@@ -94,7 +94,9 @@ class WhatsAppCloudProvider(OutreachProvider):
                 error_message="Free-form WhatsApp text is outside the service window",
             )
 
-        client = self._client or httpx.Client(timeout=settings.whatsapp_request_timeout_seconds)
+        client = self._client or httpx.Client(
+            timeout=settings.whatsapp_request_timeout_seconds
+        )
         close_client = self._client is None
         try:
             response = client.post(self._url, headers=self.headers, json=payload)

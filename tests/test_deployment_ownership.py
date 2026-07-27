@@ -1,10 +1,11 @@
 import uuid
 
 import pytest
+
 from app.models.deployment import Deployment, DeploymentStatus
 from app.models.landing_page import LandingPage, LandingStatus
 from app.models.lead import Lead, LeadStatus
-from app.models.search_job import SearchJob, JobStatus
+from app.models.search_job import JobStatus, SearchJob
 
 
 @pytest.fixture()
@@ -95,9 +96,9 @@ class TestDeploymentOwnership:
             landing.status = LandingStatus.deployed.value
         db.commit()
 
-        other_landing_refreshed = db.query(LandingPage).filter(
-            LandingPage.id == other_landing.id
-        ).first()
+        other_landing_refreshed = (
+            db.query(LandingPage).filter(LandingPage.id == other_landing.id).first()
+        )
         assert other_landing_refreshed.status == LandingStatus.published.value
 
     def test_deployment_record_linked_to_job(self, db, job_with_leads_and_landings):

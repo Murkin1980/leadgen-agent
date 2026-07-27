@@ -1,9 +1,10 @@
 """WhatsApp template sync with Meta Graph API."""
+
 from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 import httpx
@@ -91,14 +92,16 @@ class MetaTemplateSyncAdapter:
                 if comp.get("type") == "BODY":
                     body_text = comp.get("text", "")
                     break
-            templates.append(RemoteTemplate(
-                name=item.get("name", ""),
-                language_code=item.get("language", ""),
-                category=item.get("category", ""),
-                status=item.get("status", "").lower(),
-                provider_template_id=item.get("id", ""),
-                body_text=body_text,
-            ))
+            templates.append(
+                RemoteTemplate(
+                    name=item.get("name", ""),
+                    language_code=item.get("language", ""),
+                    category=item.get("category", ""),
+                    status=item.get("status", "").lower(),
+                    provider_template_id=item.get("id", ""),
+                    body_text=body_text,
+                )
+            )
         return templates
 
 
@@ -122,7 +125,9 @@ def sync_templates(db, adapter: TemplateSyncAdapter) -> TemplateSyncResult:
 
     for remote in remote_templates:
         if not remote.name or not remote.language_code:
-            result.errors.append(f"Skipping template with empty name or language: {remote}")
+            result.errors.append(
+                f"Skipping template with empty name or language: {remote}"
+            )
             continue
 
         existing = (

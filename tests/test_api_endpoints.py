@@ -1,12 +1,12 @@
 import json
 import uuid
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.database import SessionLocal
-from app.models.content_generation import ContentGeneration, ContentGenerationStatus
+from app.models.content_generation import ContentGeneration
 from app.models.landing_page import (
     LandingPage,
     LandingPageVersion,
@@ -44,15 +44,26 @@ def sample_landing(db, sample_lead):
         lead_id=sample_lead.id,
         slug=f"test-{landing_id}",
         title="Тестовый лендинг",
-        profile_json=json.dumps({
-            "meta": {"title": "Test", "description": "Desc"},
-            "company": {"name": "Тест-Мебель", "city": "Алматы", "phone": "+77001112233", "whatsapp_url": ""},
-            "hero": {"title": "Hero", "subtitle": "Sub", "cta_text": "CTA"},
-            "services": [],
-            "advantages": [],
-            "contacts": {"phone": "+77001112233"},
-            "theme": {"style": "modern", "primary_color": "#000", "accent_color": "#fff"},
-        }),
+        profile_json=json.dumps(
+            {
+                "meta": {"title": "Test", "description": "Desc"},
+                "company": {
+                    "name": "Тест-Мебель",
+                    "city": "Алматы",
+                    "phone": "+77001112233",
+                    "whatsapp_url": "",
+                },
+                "hero": {"title": "Hero", "subtitle": "Sub", "cta_text": "CTA"},
+                "services": [],
+                "advantages": [],
+                "contacts": {"phone": "+77001112233"},
+                "theme": {
+                    "style": "modern",
+                    "primary_color": "#000",
+                    "accent_color": "#fff",
+                },
+            }
+        ),
         review_status=ReviewStatus.needs_review.value,
         status=LandingStatus.draft.value,
     )
@@ -83,7 +94,9 @@ class TestCreateContentGeneration:
         assert response.status_code == 404
 
     @patch("app.api.routes.Queue")
-    def test_create_generation_default_provider(self, mock_queue_cls, client, sample_lead):
+    def test_create_generation_default_provider(
+        self, mock_queue_cls, client, sample_lead
+    ):
         mock_queue = MagicMock()
         mock_queue_cls.return_value = mock_queue
 
@@ -172,7 +185,11 @@ class TestLandingVersions:
             "services": [],
             "advantages": [],
             "contacts": {},
-            "theme": {"style": "modern", "primary_color": "#000", "accent_color": "#fff"},
+            "theme": {
+                "style": "modern",
+                "primary_color": "#000",
+                "accent_color": "#fff",
+            },
         }
         response = client.put(
             f"/landings/{sample_landing.id}/profile",
@@ -183,9 +200,11 @@ class TestLandingVersions:
         assert response.json()["review_status"] == "needs_review"
         assert response.json()["current_version"] == 1
 
-        versions = db.query(LandingPageVersion).filter(
-            LandingPageVersion.landing_page_id == sample_landing.id
-        ).all()
+        versions = (
+            db.query(LandingPageVersion)
+            .filter(LandingPageVersion.landing_page_id == sample_landing.id)
+            .all()
+        )
         assert len(versions) == 1
         assert versions[0].change_source == "manual"
 
@@ -201,16 +220,17 @@ class TestLandingVersions:
         sample_landing.current_version = 1
         db.commit()
 
-        response = client.post(
-            f"/landings/{sample_landing.id}/versions/1/restore"
-        )
+        response = client.post(f"/landings/{sample_landing.id}/versions/1/restore")
         assert response.status_code == 200
         assert response.json()["current_version"] == 2
         assert response.json()["review_status"] == "needs_review"
 
-        versions = db.query(LandingPageVersion).filter(
-            LandingPageVersion.landing_page_id == sample_landing.id
-        ).order_by(LandingPageVersion.version_number.desc()).all()
+        versions = (
+            db.query(LandingPageVersion)
+            .filter(LandingPageVersion.landing_page_id == sample_landing.id)
+            .order_by(LandingPageVersion.version_number.desc())
+            .all()
+        )
         assert len(versions) == 2
         assert versions[0].change_note == "Restored from v1"
 
@@ -223,12 +243,14 @@ class TestPublishingBlocked:
             slug="rejected-slug",
             review_status=ReviewStatus.rejected.value,
             status=LandingStatus.failed.value,
-            profile_json=json.dumps({
-                "meta": {"title": "T", "description": "D"},
-                "company": {"name": "Co", "city": "City"},
-                "hero": {"title": "H", "subtitle": "S", "cta_text": "C"},
-                "contacts": {},
-            }),
+            profile_json=json.dumps(
+                {
+                    "meta": {"title": "T", "description": "D"},
+                    "company": {"name": "Co", "city": "City"},
+                    "hero": {"title": "H", "subtitle": "S", "cta_text": "C"},
+                    "contacts": {},
+                }
+            ),
         )
         db.add(landing)
         db.commit()
@@ -247,12 +269,14 @@ class TestPublishingBlocked:
             lead_id=sample_lead.id,
             slug="draft-slug",
             review_status=ReviewStatus.draft.value,
-            profile_json=json.dumps({
-                "meta": {"title": "T", "description": "D"},
-                "company": {"name": "Co", "city": "City"},
-                "hero": {"title": "H", "subtitle": "S", "cta_text": "C"},
-                "contacts": {},
-            }),
+            profile_json=json.dumps(
+                {
+                    "meta": {"title": "T", "description": "D"},
+                    "company": {"name": "Co", "city": "City"},
+                    "hero": {"title": "H", "subtitle": "S", "cta_text": "C"},
+                    "contacts": {},
+                }
+            ),
         )
         db.add(landing)
         db.commit()

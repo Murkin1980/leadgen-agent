@@ -26,9 +26,7 @@ class SearchJob(Base):
     category: Mapped[str] = mapped_column(String(500), nullable=False)
     limit: Mapped[int] = mapped_column(Integer, default=20)
     provider: Mapped[str] = mapped_column(String(50), default="mock")
-    status: Mapped[str] = mapped_column(
-        String(50), default=JobStatus.pending.value
-    )
+    status: Mapped[str] = mapped_column(String(50), default=JobStatus.pending.value)
     found_count: Mapped[int] = mapped_column(Integer, default=0)
     accepted_count: Mapped[int] = mapped_column(Integer, default=0)
     current_page: Mapped[int] = mapped_column(Integer, default=0)
@@ -44,4 +42,6 @@ class SearchJob(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    leads = relationship("Lead", back_populates="job", foreign_keys="Lead.search_job_id")
+    leads = relationship(
+        "Lead", back_populates="job", foreign_keys="Lead.search_job_id"
+    )

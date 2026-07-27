@@ -1,7 +1,6 @@
-import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -10,19 +9,17 @@ from app.config import settings
 from app.database import get_db
 from app.models.audit import AuditLog
 from app.models.campaign import (
-    OutreachCampaign,
-    OutreachMessage,
     CampaignStatus,
     MessageStatus,
+    OutreachCampaign,
+    OutreachMessage,
 )
-from app.models.event import OutreachEvent
 from app.models.lead import Lead
-from app.models.landing_page import LandingPage, LandingStatus, ReviewStatus
 from app.models.stage import LeadStage, LeadStageHistory
 from app.outreach.message_generator import MessageContext, generate_messages
 from app.outreach.service import get_follow_up_candidates, get_outreach_metrics
-from app.outreach.stage_service import transition_lead_stage, VALID_TRANSITIONS
-from app.security import log_audit_event
+from app.outreach.stage_service import transition_lead_stage
+from app.schemas.lead import LeadResponse
 from app.schemas.outreach import (
     AuditLogResponse,
     CampaignAddLeads,
@@ -33,11 +30,10 @@ from app.schemas.outreach import (
     MessageRejectRequest,
     MessageResponse,
     MessageUpdateRequest,
-    OutreachMetricsResponse,
     StageChangeRequest,
     StageHistoryResponse,
 )
-from app.schemas.lead import LeadResponse
+from app.security import log_audit_event
 from app.workers.connection import redis_conn
 
 router = APIRouter()
@@ -45,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 # --- Campaigns ---
+
 
 @router.post("/campaigns", response_model=CampaignResponse)
 def create_campaign(
@@ -78,9 +75,9 @@ def list_campaigns(
 
 @router.get("/campaigns/{campaign_id}", response_model=CampaignResponse)
 def get_campaign(campaign_id: str, db: Session = Depends(get_db)):
-    campaign = db.query(OutreachCampaign).filter(
-        OutreachCampaign.id == campaign_id
-    ).first()
+    campaign = (
+        db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return campaign
@@ -92,9 +89,9 @@ def add_leads_to_campaign(
     payload: CampaignAddLeads,
     db: Session = Depends(get_db),
 ):
-    campaign = db.query(OutreachCampaign).filter(
-        OutreachCampaign.id == campaign_id
-    ).first()
+    campaign = (
+        db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
@@ -137,14 +134,17 @@ def generate_messages_for_campaign(
     db: Session = Depends(get_db),
 ):
     from rq import Queue
-    campaign = db.query(OutreachCampaign).filter(
-        OutreachCampaign.id == campaign_id
-    ).first()
+
+    campaign = (
+        db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     q = Queue("outreach_generate", connection=redis_conn)
-    q.enqueue("app.workers.outreach_generator_worker.run_outreach_generator", campaign_id)
+    q.enqueue(
+        "app.workers.outreach_generator_worker.run_outreach_generator", campaign_id
+    )
     return {"status": "queued"}
 
 
@@ -154,9 +154,7 @@ def list_campaign_messages(
     status: str | None = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(OutreachMessage).filter(
-        OutreachMessage.campaign_id == campaign_id
-    )
+    q = db.query(OutreachMessage).filter(OutreachMessage.campaign_id == campaign_id)
     if status:
         q = q.filter(OutreachMessage.status == status)
     return q.order_by(OutreachMessage.created_at.desc()).all()
@@ -168,9 +166,10 @@ def send_approved_messages(
     db: Session = Depends(get_db),
 ):
     from rq import Queue
-    campaign = db.query(OutreachCampaign).filter(
-        OutreachCampaign.id == campaign_id
-    ).first()
+
+    campaign = (
+        db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     if not settings.outreach_enabled:
@@ -195,13 +194,19 @@ def send_approved_messages(
 
 @router.post("/campaigns/{campaign_id}/pause", response_model=CampaignResponse)
 def pause_campaign(campaign_id: str, db: Session = Depends(get_db)):
-    campaign = db.query(OutreachCampaign).filter(
-        OutreachCampaign.id == campaign_id
-    ).first()
+    campaign = (
+        db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    if campaign.status not in (CampaignStatus.running.value, CampaignStatus.ready.value):
-        raise HTTPException(status_code=400, detail=f"Cannot pause campaign in status: {campaign.status}")
+    if campaign.status not in (
+        CampaignStatus.running.value,
+        CampaignStatus.ready.value,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot pause campaign in status: {campaign.status}",
+        )
     campaign.status = CampaignStatus.paused.value
     db.commit()
     db.refresh(campaign)
@@ -210,13 +215,16 @@ def pause_campaign(campaign_id: str, db: Session = Depends(get_db)):
 
 @router.post("/campaigns/{campaign_id}/resume", response_model=CampaignResponse)
 def resume_campaign(campaign_id: str, db: Session = Depends(get_db)):
-    campaign = db.query(OutreachCampaign).filter(
-        OutreachCampaign.id == campaign_id
-    ).first()
+    campaign = (
+        db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     if campaign.status != CampaignStatus.paused.value:
-        raise HTTPException(status_code=400, detail=f"Cannot resume campaign in status: {campaign.status}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resume campaign in status: {campaign.status}",
+        )
     campaign.status = CampaignStatus.running.value
     db.commit()
     db.refresh(campaign)
@@ -225,13 +233,19 @@ def resume_campaign(campaign_id: str, db: Session = Depends(get_db)):
 
 @router.post("/campaigns/{campaign_id}/cancel", response_model=CampaignResponse)
 def cancel_campaign(campaign_id: str, db: Session = Depends(get_db)):
-    campaign = db.query(OutreachCampaign).filter(
-        OutreachCampaign.id == campaign_id
-    ).first()
+    campaign = (
+        db.query(OutreachCampaign).filter(OutreachCampaign.id == campaign_id).first()
+    )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    if campaign.status in (CampaignStatus.completed.value, CampaignStatus.cancelled.value):
-        raise HTTPException(status_code=400, detail=f"Cannot cancel campaign in status: {campaign.status}")
+    if campaign.status in (
+        CampaignStatus.completed.value,
+        CampaignStatus.cancelled.value,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel campaign in status: {campaign.status}",
+        )
     campaign.status = CampaignStatus.cancelled.value
     db.commit()
     db.refresh(campaign)
@@ -239,6 +253,7 @@ def cancel_campaign(campaign_id: str, db: Session = Depends(get_db)):
 
 
 # --- Messages ---
+
 
 @router.get("/outreach-messages", response_model=list[MessageResponse])
 def list_messages(
@@ -276,13 +291,18 @@ def approve_message(
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
     if msg.status != MessageStatus.needs_review.value:
-        raise HTTPException(status_code=400, detail=f"Cannot approve message in status: {msg.status}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot approve message in status: {msg.status}"
+        )
 
     msg.status = MessageStatus.approved.value
     msg.approved_by = (payload.approved_by if payload else "admin") or "admin"
-    msg.approved_at = datetime.now(timezone.utc)
+    msg.approved_at = datetime.now(UTC)
     log_audit_event(
-        db, "message_approved", "outreach_message", message_id,
+        db,
+        "message_approved",
+        "outreach_message",
+        message_id,
         actor=msg.approved_by,
     )
     db.commit()
@@ -300,12 +320,17 @@ def reject_message(
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
     if msg.status not in (MessageStatus.needs_review.value, MessageStatus.draft.value):
-        raise HTTPException(status_code=400, detail=f"Cannot reject message in status: {msg.status}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot reject message in status: {msg.status}"
+        )
 
     msg.status = MessageStatus.cancelled.value
     msg.error_message = (payload.reason if payload else "Rejected") or "Rejected"
     log_audit_event(
-        db, "message_rejected", "outreach_message", message_id,
+        db,
+        "message_rejected",
+        "outreach_message",
+        message_id,
         actor="admin",
     )
     db.commit()
@@ -323,7 +348,9 @@ def update_message(
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
     if msg.status not in (MessageStatus.draft.value, MessageStatus.needs_review.value):
-        raise HTTPException(status_code=400, detail=f"Cannot edit message in status: {msg.status}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot edit message in status: {msg.status}"
+        )
 
     if payload.subject is not None:
         msg.subject = payload.subject
@@ -341,11 +368,14 @@ def send_message(
     db: Session = Depends(get_db),
 ):
     from rq import Queue
+
     msg = db.query(OutreachMessage).filter(OutreachMessage.id == message_id).first()
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
     if msg.status != MessageStatus.approved.value:
-        raise HTTPException(status_code=400, detail=f"Cannot send message in status: {msg.status}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot send message in status: {msg.status}"
+        )
     if not settings.outreach_enabled:
         raise HTTPException(status_code=400, detail="Outreach is disabled")
 
@@ -360,6 +390,7 @@ def send_message(
 
 # --- Lead CRM ---
 
+
 @router.post("/leads/{lead_id}/stage", response_model=LeadResponse)
 def change_lead_stage(
     lead_id: int,
@@ -368,7 +399,9 @@ def change_lead_stage(
 ):
     try:
         lead = transition_lead_stage(
-            db, lead_id, payload.to_stage,
+            db,
+            lead_id,
+            payload.to_stage,
             changed_by=payload.changed_by,
             reason=payload.reason,
         )
@@ -422,8 +455,12 @@ def set_do_not_contact(
         db.add(history)
         lead.stage = LeadStage.do_not_contact.value
         log_audit_event(
-            db, "opt_out", "lead", str(lead_id),
-            actor="system", details={"reason": reason},
+            db,
+            "opt_out",
+            "lead",
+            str(lead_id),
+            actor="system",
+            details={"reason": reason},
         )
         db.commit()
     db.refresh(lead)
@@ -432,19 +469,22 @@ def set_do_not_contact(
 
 # --- Follow-ups ---
 
+
 @router.get("/follow-ups/due")
 def list_follow_ups_due():
     candidates = get_follow_up_candidates()
     result = []
     for msg in candidates:
-        result.append(FollowUpCandidateResponse(
-            message_id=msg.id,
-            lead_id=msg.lead_id,
-            lead_name="",
-            channel=msg.channel,
-            follow_up_number=msg.follow_up_number,
-            last_sent_at=msg.sent_at,
-        ))
+        result.append(
+            FollowUpCandidateResponse(
+                message_id=msg.id,
+                lead_id=msg.lead_id,
+                lead_name="",
+                channel=msg.channel,
+                follow_up_number=msg.follow_up_number,
+                last_sent_at=msg.sent_at,
+            )
+        )
     return result
 
 
@@ -453,9 +493,9 @@ def generate_follow_up(
     message_id: str,
     db: Session = Depends(get_db),
 ):
-    original = db.query(OutreachMessage).filter(
-        OutreachMessage.id == message_id
-    ).first()
+    original = (
+        db.query(OutreachMessage).filter(OutreachMessage.id == message_id).first()
+    )
     if not original:
         raise HTTPException(status_code=404, detail="Message not found")
 
@@ -512,6 +552,7 @@ def generate_follow_up(
 async def webhook_email(request: Request):
     payload = await request.json()
     from app.outreach.webhook_handler import process_webhook_event
+
     result = process_webhook_event("email", payload)
     return result
 
@@ -520,11 +561,13 @@ async def webhook_email(request: Request):
 async def webhook_telegram(request: Request):
     payload = await request.json()
     from app.outreach.webhook_handler import process_webhook_event
+
     result = process_webhook_event("telegram", payload)
     return result
 
 
 # --- Metrics ---
+
 
 @router.get("/metrics/outreach")
 def get_outreach_metrics_endpoint():
@@ -532,6 +575,7 @@ def get_outreach_metrics_endpoint():
 
 
 # --- Audit Log ---
+
 
 @router.get("/audit-log", response_model=list[AuditLogResponse])
 def list_audit_log(

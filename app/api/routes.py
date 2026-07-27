@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from rq import Queue
@@ -8,10 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.generation.context import GenerationContext
-from app.generation.factory import create_text_generator, get_available_text_providers
+from app.generation.factory import get_available_text_providers
 from app.generation.usage import usage_tracker
-from app.generation.validator import GeneratedContentValidator
 from app.models.content_generation import ContentGeneration, ContentGenerationStatus
 from app.models.deployment import Deployment, DeploymentStatus
 from app.models.landing_page import (
@@ -22,9 +21,12 @@ from app.models.landing_page import (
     ReviewStatus,
 )
 from app.models.lead import Lead, LeadStatus
-from app.models.search_job import SearchJob, JobStatus
+from app.models.search_job import JobStatus, SearchJob
 from app.publisher.publisher import publish_site, validate_slug
-from app.schemas.content_generation import ContentGenerationCreate, ContentGenerationResponse
+from app.schemas.content_generation import (
+    ContentGenerationCreate,
+    ContentGenerationResponse,
+)
 from app.schemas.deployment import DeploymentResponse
 from app.schemas.job import JobCreate, JobResponse
 from app.schemas.landing import (
@@ -45,8 +47,9 @@ def health_check():
     pg_ok = True
     redis_ok = True
     try:
-        from app.database import engine
         import sqlalchemy
+
+        from app.database import engine
 
         with engine.connect() as conn:
             conn.execute(sqlalchemy.text("SELECT 1"))
@@ -64,6 +67,7 @@ def health_check():
 @router.get("/providers")
 def list_providers():
     from app.collector.factory import get_available_providers
+
     return {
         "collector_providers": get_available_providers(),
         "text_generator_providers": get_available_text_providers(),
@@ -73,6 +77,7 @@ def list_providers():
 
 
 # --- Jobs ---
+
 
 @router.post("/jobs", response_model=JobResponse)
 def create_job(payload: JobCreate, db: Session = Depends(get_db)):
@@ -88,6 +93,7 @@ def create_job(payload: JobCreate, db: Session = Depends(get_db)):
     db.refresh(job)
 
     from rq import Queue
+
     q = Queue("collect", connection=redis_conn)
     q.enqueue("app.workers.collector_worker.run_collector", job.id, payload.provider)
     return job
@@ -107,7 +113,9 @@ def cancel_job(job_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status not in (JobStatus.pending.value, JobStatus.collecting.value):
-        raise HTTPException(status_code=400, detail=f"Cannot cancel job in status: {job.status}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot cancel job in status: {job.status}"
+        )
     job.status = JobStatus.cancelled.value
     db.commit()
     db.refresh(job)
@@ -120,19 +128,24 @@ def retry_job(job_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status != JobStatus.failed.value:
-        raise HTTPException(status_code=400, detail=f"Can only retry failed jobs, current status: {job.status}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Can only retry failed jobs, current status: {job.status}",
+        )
     job.status = JobStatus.pending.value
     job.error_message = None
     job.current_page = 0
     job.processed_count = 0
     db.commit()
     from rq import Queue
+
     q = Queue("collect", connection=redis_conn)
     q.enqueue("app.workers.collector_worker.run_collector", job.id, job.provider)
     return job
 
 
 # --- Leads ---
+
 
 @router.get("/leads", response_model=list[LeadResponse])
 def list_leads(
@@ -172,7 +185,10 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
 
 # --- Content Generations ---
 
-@router.post("/leads/{lead_id}/content-generations", response_model=ContentGenerationResponse)
+
+@router.post(
+    "/leads/{lead_id}/content-generations", response_model=ContentGenerationResponse
+)
 def create_content_generation(
     lead_id: int,
     payload: ContentGenerationCreate | None = None,
@@ -182,7 +198,9 @@ def create_content_generation(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    provider = (payload.provider if payload else None) or settings.text_generator_provider
+    provider = (
+        payload.provider if payload else None
+    ) or settings.text_generator_provider
     language = (payload.language if payload else None) or settings.default_language
     notes = (payload.notes if payload else None) or None
 
@@ -202,7 +220,9 @@ def create_content_generation(
     db.refresh(gen)
 
     q = Queue("generate_content", connection=redis_conn)
-    q.enqueue("app.workers.content_generator_worker.run_content_generator", generation_id)
+    q.enqueue(
+        "app.workers.content_generator_worker.run_content_generator", generation_id
+    )
 
     return gen
 
@@ -223,18 +243,30 @@ def list_content_generations(
         q = q.filter(ContentGeneration.status == status)
     if provider:
         q = q.filter(ContentGeneration.provider == provider)
-    return q.order_by(ContentGeneration.created_at.desc()).offset(offset).limit(limit).all()
+    return (
+        q.order_by(ContentGeneration.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
 
-@router.get("/content-generations/{generation_id}", response_model=ContentGenerationResponse)
+@router.get(
+    "/content-generations/{generation_id}", response_model=ContentGenerationResponse
+)
 def get_content_generation(generation_id: str, db: Session = Depends(get_db)):
-    gen = db.query(ContentGeneration).filter(ContentGeneration.id == generation_id).first()
+    gen = (
+        db.query(ContentGeneration)
+        .filter(ContentGeneration.id == generation_id)
+        .first()
+    )
     if not gen:
         raise HTTPException(status_code=404, detail="Content generation not found")
     return gen
 
 
 # --- Landing review ---
+
 
 @router.get("/landings", response_model=list[LandingResponse])
 def list_landings(
@@ -261,15 +293,20 @@ def get_landing(landing_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/landings/{landing_id}/approve", response_model=LandingResponse)
-def approve_landing(landing_id: str, payload: LandingApproveRequest | None = None, db: Session = Depends(get_db)):
+def approve_landing(
+    landing_id: str,
+    payload: LandingApproveRequest | None = None,
+    db: Session = Depends(get_db),
+):
     landing = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not landing:
         raise HTTPException(status_code=404, detail="Landing not found")
 
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     landing.review_status = ReviewStatus.approved.value
     landing.status = LandingStatus.approved.value
-    landing.approved_at = datetime.now(timezone.utc)
+    landing.approved_at = datetime.now(UTC)
     landing.approved_by = (payload.approved_by if payload else "api") or "api"
     db.commit()
     db.refresh(landing)
@@ -277,26 +314,35 @@ def approve_landing(landing_id: str, payload: LandingApproveRequest | None = Non
 
 
 @router.post("/landings/{landing_id}/reject", response_model=LandingResponse)
-def reject_landing(landing_id: str, payload: LandingRejectRequest | None = None, db: Session = Depends(get_db)):
+def reject_landing(
+    landing_id: str,
+    payload: LandingRejectRequest | None = None,
+    db: Session = Depends(get_db),
+):
     landing = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not landing:
         raise HTTPException(status_code=404, detail="Landing not found")
 
     landing.review_status = ReviewStatus.rejected.value
     landing.status = LandingStatus.failed.value
-    landing.review_note = (payload.reason if payload else "Rejected via API") or "Rejected via API"
+    landing.review_note = (
+        payload.reason if payload else "Rejected via API"
+    ) or "Rejected via API"
     db.commit()
     db.refresh(landing)
     return landing
 
 
 @router.put("/landings/{landing_id}/profile", response_model=LandingResponse)
-def update_landing_profile(landing_id: str, profile_data: dict, db: Session = Depends(get_db)):
+def update_landing_profile(
+    landing_id: str, profile_data: dict, db: Session = Depends(get_db)
+):
     landing = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not landing:
         raise HTTPException(status_code=404, detail="Landing not found")
 
     from app.landing.schema import LandingProfile
+
     try:
         LandingProfile(**profile_data)
     except Exception as e:
@@ -320,7 +366,9 @@ def update_landing_profile(landing_id: str, profile_data: dict, db: Session = De
     return landing
 
 
-@router.get("/landings/{landing_id}/versions", response_model=list[LandingVersionResponse])
+@router.get(
+    "/landings/{landing_id}/versions", response_model=list[LandingVersionResponse]
+)
 def list_landing_versions(landing_id: str, db: Session = Depends(get_db)):
     landing = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not landing:
@@ -333,8 +381,13 @@ def list_landing_versions(landing_id: str, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/landings/{landing_id}/versions/{version_number}", response_model=LandingVersionResponse)
-def get_landing_version(landing_id: str, version_number: int, db: Session = Depends(get_db)):
+@router.get(
+    "/landings/{landing_id}/versions/{version_number}",
+    response_model=LandingVersionResponse,
+)
+def get_landing_version(
+    landing_id: str, version_number: int, db: Session = Depends(get_db)
+):
     v = (
         db.query(LandingPageVersion)
         .filter(
@@ -348,8 +401,13 @@ def get_landing_version(landing_id: str, version_number: int, db: Session = Depe
     return v
 
 
-@router.post("/landings/{landing_id}/versions/{version_number}/restore", response_model=LandingResponse)
-def restore_landing_version(landing_id: str, version_number: int, db: Session = Depends(get_db)):
+@router.post(
+    "/landings/{landing_id}/versions/{version_number}/restore",
+    response_model=LandingResponse,
+)
+def restore_landing_version(
+    landing_id: str, version_number: int, db: Session = Depends(get_db)
+):
     landing = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not landing:
         raise HTTPException(status_code=404, detail="Landing not found")
@@ -383,6 +441,7 @@ def restore_landing_version(landing_id: str, version_number: int, db: Session = 
 
 
 # --- Publish ---
+
 
 @router.post("/landings/{landing_id}/publish", response_model=LandingResponse)
 def publish_landing(landing_id: str, db: Session = Depends(get_db)):
@@ -430,6 +489,7 @@ def publish_landing(landing_id: str, db: Session = Depends(get_db)):
 
 # --- Deploy ---
 
+
 @router.post("/jobs/{job_id}/deploy", response_model=DeploymentResponse)
 def deploy_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
@@ -446,18 +506,24 @@ def deploy_job(job_id: int, db: Session = Depends(get_db)):
         .count()
     )
     if published == 0:
-        raise HTTPException(status_code=400, detail="No published landings to deploy for this job")
+        raise HTTPException(
+            status_code=400, detail="No published landings to deploy for this job"
+        )
 
     active = (
         db.query(Deployment)
         .filter(
             Deployment.job_id == job_id,
-            Deployment.status.in_([DeploymentStatus.queued.value, DeploymentStatus.running.value]),
+            Deployment.status.in_(
+                [DeploymentStatus.queued.value, DeploymentStatus.running.value]
+            ),
         )
         .count()
     )
     if active > 0:
-        raise HTTPException(status_code=409, detail="An active deployment already exists for this job")
+        raise HTTPException(
+            status_code=409, detail="An active deployment already exists for this job"
+        )
 
     deployment = Deployment(
         id=str(uuid.uuid4())[:12],
@@ -472,6 +538,7 @@ def deploy_job(job_id: int, db: Session = Depends(get_db)):
     db.refresh(deployment)
 
     from rq import Queue
+
     q = Queue("deploy", connection=redis_conn)
     q.enqueue("app.workers.deployer_worker.run_deployer", deployment.id)
     return deployment
@@ -502,6 +569,7 @@ def list_deployments(
 
 
 # --- Usage ---
+
 
 @router.get("/usage/openai")
 def get_openai_usage():

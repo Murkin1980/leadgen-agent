@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
-
-from app.config import settings
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +33,10 @@ class MessageContext:
 
 def _load_template(name: str) -> str:
     import importlib.resources
+
     try:
         import app.outreach.templates as tmpl_pkg
+
         ref = importlib.resources.files(tmpl_pkg) / f"{name}.txt"
         return ref.read_text(encoding="utf-8")
     except Exception:
@@ -70,13 +69,18 @@ def _generate_ru(ctx: MessageContext) -> GeneratedMessages:
 
     follow_up = (
         f"Здравствуйте, «{name}»! "
-        + ("Напоминаем про промо-страницу." if not preview else f"Вы посмотрели промо-страницу? {preview}")
+        + (
+            "Напоминаем про промо-страницу."
+            if not preview
+            else f"Вы посмотрели промо-страницу? {preview}"
+        )
         + f" {OPT_OUT_TEXT_RU}"
     )
 
     whatsapp_short = (
-        f"Здравствуйте! «{name}»" + (f" ({city})" if city else "")
-        + f" — мы подготовили промо-страницу для вас."
+        f"Здравствуйте! «{name}»"
+        + (f" ({city})" if city else "")
+        + " — мы подготовили промо-страницу для вас."
         + (f" {preview}" if preview else "")
         + f" {OPT_OUT_TEXT_RU}"
     )
@@ -129,13 +133,18 @@ def _generate_kk(ctx: MessageContext) -> GeneratedMessages:
 
     follow_up = (
         f"Сәлеметсіз бе, «{name}»! "
-        + ("Жарнама беті туралы еске саламыз." if not preview else f"Сіз жарнама бетін қарастырдыңыз ба? {preview}")
+        + (
+            "Жарнама беті туралы еске саламыз."
+            if not preview
+            else f"Сіз жарнама бетін қарастырдыңыз ба? {preview}"
+        )
         + f" {OPT_OUT_TEXT_KK}"
     )
 
     whatsapp_short = (
-        f"Сәлеметсіз бе! «{name}»" + (f" ({city})" if city else "")
-        + f" — біз сіз үшін жарнама беті дайындадық."
+        f"Сәлеметсіз бе! «{name}»"
+        + (f" ({city})" if city else "")
+        + " — біз сіз үшін жарнама беті дайындадық."
         + (f" {preview}" if preview else "")
         + f" {OPT_OUT_TEXT_KK}"
     )

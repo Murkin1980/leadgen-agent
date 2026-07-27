@@ -1,4 +1,3 @@
-import pytest
 from app.collector.mock import MockCollectorAdapter
 
 
@@ -15,7 +14,9 @@ class TestCollector:
 
     def test_filters_companies_with_website(self):
         adapter = MockCollectorAdapter()
-        all_companies = adapter.search(city="Алматы", category="мебель на заказ", limit=100)
+        all_companies = adapter.search(
+            city="Алматы", category="мебель на заказ", limit=100
+        )
         no_website = [c for c in all_companies if not c.website]
         with_website = [c for c in all_companies if c.website]
         assert len(no_website) > 0

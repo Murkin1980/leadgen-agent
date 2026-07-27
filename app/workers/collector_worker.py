@@ -1,13 +1,13 @@
-from datetime import datetime, timezone
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.collector.factory import create_collector
 from app.config import settings
 from app.database import SessionLocal
-from app.models.lead import Lead, LeadStatus, WebsiteCheckStatus
-from app.models.search_job import SearchJob, JobStatus
+from app.models.lead import Lead, LeadStatus
+from app.models.search_job import JobStatus, SearchJob
 from app.qualification.service import qualify_lead
 from app.verification.website import verify_website
 from app.workers.connection import redis_conn
@@ -22,9 +22,7 @@ def _get_collector():
 def _check_cancellation(db: Session, job_id: int) -> bool:
     """Check if job has been cancelled."""
     job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
-    if job and job.status == JobStatus.cancelled.value:
-        return True
-    return False
+    return bool(job and job.status == JobStatus.cancelled.value)
 
 
 def run_collector(job_id: int, provider: str | None = None) -> None:
@@ -34,9 +32,9 @@ def run_collector(job_id: int, provider: str | None = None) -> None:
         if not job:
             logger.error(f"Job {job_id} not found")
             return
-        
+
         job.status = JobStatus.collecting.value
-        job.started_at = datetime.now(timezone.utc)
+        job.started_at = datetime.now(UTC)
         if provider:
             job.provider = provider
         db.commit()
@@ -80,7 +78,9 @@ def run_collector(job_id: int, provider: str | None = None) -> None:
 
                 existing = (
                     db.query(Lead)
-                    .filter(Lead.source == job.provider, Lead.source_id == company.source_id)
+                    .filter(
+                        Lead.source == job.provider, Lead.source_id == company.source_id
+                    )
                     .first()
                 )
                 if existing:
@@ -145,7 +145,9 @@ def run_collector(job_id: int, provider: str | None = None) -> None:
         lead_ids = [
             lead.id
             for lead in db.query(Lead)
-            .filter(Lead.search_job_id == job_id, Lead.status == LeadStatus.collected.value)
+            .filter(
+                Lead.search_job_id == job_id, Lead.status == LeadStatus.collected.value
+            )
             .all()
         ]
 
@@ -153,9 +155,7 @@ def run_collector(job_id: int, provider: str | None = None) -> None:
             from rq import Queue
 
             q = Queue("enrich", connection=redis_conn)
-            q.enqueue(
-                "app.workers.enricher_worker.run_enricher", lead_ids, job_id
-            )
+            q.enqueue("app.workers.enricher_worker.run_enricher", lead_ids, job_id)
 
     except Exception as exc:
         logger.error(f"Job {job_id} failed: {exc}")

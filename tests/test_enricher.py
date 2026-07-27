@@ -1,11 +1,9 @@
-import pytest
 from app.enrichment.enricher import (
-    normalize_phone,
-    make_whatsapp_url,
-    make_slug,
     classify_specialization,
-    build_services,
     enrich_lead,
+    make_slug,
+    make_whatsapp_url,
+    normalize_phone,
 )
 from app.models.lead import Lead
 

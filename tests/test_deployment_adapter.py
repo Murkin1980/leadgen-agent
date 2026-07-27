@@ -1,12 +1,9 @@
-import uuid
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-from app.deployment.base import DeploymentResult
-from app.deployment.mock import MockDeploymentAdapter
-from app.deployment.cloudflare import CloudflarePagesDeploymentAdapter
 from app.config import settings
+from app.deployment.base import DeploymentResult
+from app.deployment.cloudflare import CloudflarePagesDeploymentAdapter
+from app.deployment.mock import MockDeploymentAdapter
 
 
 class TestMockDeploymentAdapter:

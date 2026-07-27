@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -14,13 +15,12 @@ logger = logging.getLogger(__name__)
 
 class WebsiteVerificationError(Exception):
     """Error during website verification."""
-    pass
 
 
 class WebsiteVerifier:
     """Verifies if a website is reachable with SSRF protection."""
 
-    PRIVATE_NETWORKS = [
+    PRIVATE_NETWORKS: ClassVar[list] = [
         ipaddress.ip_network("10.0.0.0/8"),
         ipaddress.ip_network("172.16.0.0/12"),
         ipaddress.ip_network("192.168.0.0/16"),
@@ -96,7 +96,7 @@ class WebsiteVerifier:
     def verify(self, url: str) -> dict:
         """
         Verify if a website is reachable.
-        
+
         Returns:
             dict with keys:
                 - status: "ok" | "unreachable" | "has_website" | "error"
@@ -105,12 +105,17 @@ class WebsiteVerifier:
                 - error: str | None
         """
         if not settings.verification_enabled:
-            return {"status": "ok", "status_code": None, "redirect_url": None, "error": None}
+            return {
+                "status": "ok",
+                "status_code": None,
+                "redirect_url": None,
+                "error": None,
+            }
 
         try:
             normalized_url = self._validate_url(url)
             parsed = urlparse(normalized_url)
-            
+
             self._resolve_hostname(parsed.hostname)
 
             with httpx.Client(
@@ -121,7 +126,9 @@ class WebsiteVerifier:
             ) as client:
                 response = client.head(normalized_url, allow_redirects=True)
 
-                redirect_url = str(response.url) if str(response.url) != normalized_url else None
+                redirect_url = (
+                    str(response.url) if str(response.url) != normalized_url else None
+                )
 
                 if response.status_code < 400:
                     return {

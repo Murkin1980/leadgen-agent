@@ -1,8 +1,5 @@
-import os
-import tempfile
-from pathlib import Path
-
 import pytest
+
 from app.collector.adapters.csv import CsvCollectorAdapter
 from app.collector.base import CollectedPage
 
@@ -67,7 +64,9 @@ class TestCsvCollector:
         assert len(company.source_id) == 12
 
     def test_search_page_returns_page(self, csv_adapter):
-        page = csv_adapter.search_page(city="Алматы", category="Мебель на заказ", page=1, page_size=2)
+        page = csv_adapter.search_page(
+            city="Алматы", category="Мебель на заказ", page=1, page_size=2
+        )
         assert isinstance(page, CollectedPage)
         assert page.page == 1
         assert page.page_size == 2
@@ -87,14 +86,22 @@ class TestCsvCollector:
         assert page.total == 2
 
     def test_search_page_city_filter(self, csv_adapter):
-        page_almaty = csv_adapter.search_page(city="Алматы", category="", page=1, page_size=10)
-        page_astana = csv_adapter.search_page(city="Астана", category="", page=1, page_size=10)
+        page_almaty = csv_adapter.search_page(
+            city="Алматы", category="", page=1, page_size=10
+        )
+        page_astana = csv_adapter.search_page(
+            city="Астана", category="", page=1, page_size=10
+        )
         assert len(page_almaty.items) == 2
         assert len(page_astana.items) == 1
 
     def test_search_page_category_filter(self, csv_adapter):
-        page_furniture = csv_adapter.search_page(city="", category="Мебель на заказ", page=1, page_size=10)
-        page_office = csv_adapter.search_page(city="", category="Офисная мебель", page=1, page_size=10)
+        page_furniture = csv_adapter.search_page(
+            city="", category="Мебель на заказ", page=1, page_size=10
+        )
+        page_office = csv_adapter.search_page(
+            city="", category="Офисная мебель", page=1, page_size=10
+        )
         assert len(page_furniture.items) == 2
         assert len(page_office.items) == 1
 
@@ -113,6 +120,8 @@ class TestCsvCollector:
         assert len(companies) == 0
 
     def test_provider_metadata(self, csv_adapter):
-        page = csv_adapter.search_page(city="Алматы", category="Мебель", page=1, page_size=10)
+        page = csv_adapter.search_page(
+            city="Алматы", category="Мебель", page=1, page_size=10
+        )
         assert page.provider_metadata["source"] == "csv"
         assert "file" in page.provider_metadata

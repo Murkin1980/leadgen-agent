@@ -1,13 +1,18 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from app.verification.website import WebsiteVerifier, verify_website
+import pytest
+
+from app.verification.website import (
+    WebsiteVerificationError,
+    WebsiteVerifier,
+    verify_website,
+)
 
 
 class TestWebsiteVerifier:
     def test_validate_url_empty(self):
         verifier = WebsiteVerifier()
-        with pytest.raises(Exception):
+        with pytest.raises(WebsiteVerificationError):
             verifier._validate_url("")
 
     def test_validate_url_adds_http(self):
@@ -22,17 +27,17 @@ class TestWebsiteVerifier:
 
     def test_validate_url_rejects_localhost(self):
         verifier = WebsiteVerifier()
-        with pytest.raises(Exception):
+        with pytest.raises(WebsiteVerificationError):
             verifier._validate_url("http://localhost/test")
 
     def test_validate_url_rejects_127(self):
         verifier = WebsiteVerifier()
-        with pytest.raises(Exception):
+        with pytest.raises(WebsiteVerificationError):
             verifier._validate_url("http://127.0.0.1/test")
 
     def test_validate_url_rejects_local_domain(self):
         verifier = WebsiteVerifier()
-        with pytest.raises(Exception):
+        with pytest.raises(WebsiteVerificationError):
             verifier._validate_url("http://mycomputer.local/test")
 
     def test_is_private_ip_10(self):
@@ -81,20 +86,23 @@ class TestWebsiteVerification:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.url = "http://example.com"
-        
+
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.head.return_value = mock_response
         mock_client_class.return_value = mock_client
-        
+
         with patch("app.verification.website.settings") as mock_settings:
             mock_settings.verification_enabled = True
             mock_settings.verification_timeout = 5.0
             mock_settings.verification_max_redirects = 3
             mock_settings.verification_user_agent = "TestBot"
-            
-            with patch("socket.getaddrinfo", return_value=[(2, None, None, None, ("93.184.216.34", 0))]):
+
+            with patch(
+                "socket.getaddrinfo",
+                return_value=[(2, None, None, None, ("93.184.216.34", 0))],
+            ):
                 result = verify_website("http://example.com")
                 assert result["status"] == "has_website"
                 assert result["status_code"] == 200
@@ -102,19 +110,23 @@ class TestWebsiteVerification:
     @patch("app.verification.website.httpx.Client")
     def test_verify_timeout(self, mock_client_class):
         import httpx
+
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.head.side_effect = httpx.TimeoutException("timeout")
         mock_client_class.return_value = mock_client
-        
+
         with patch("app.verification.website.settings") as mock_settings:
             mock_settings.verification_enabled = True
             mock_settings.verification_timeout = 1.0
             mock_settings.verification_max_redirects = 3
             mock_settings.verification_user_agent = "TestBot"
-            
-            with patch("socket.getaddrinfo", return_value=[(2, None, None, None, ("93.184.216.34", 0))]):
+
+            with patch(
+                "socket.getaddrinfo",
+                return_value=[(2, None, None, None, ("93.184.216.34", 0))],
+            ):
                 result = verify_website("http://example.com")
                 assert result["status"] == "unreachable"
                 assert "Timeout" in result["error"]

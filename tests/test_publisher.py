@@ -1,10 +1,10 @@
 import shutil
-from pathlib import Path
 
 import pytest
-from app.publisher.publisher import publish_site, validate_slug, SITES_DIR
-from app.landing.schema import LandingProfile
+
 from app.landing.renderer import render_landing, save_landing
+from app.landing.schema import LandingProfile
+from app.publisher.publisher import SITES_DIR, publish_site, validate_slug
 
 
 class TestSlugValidation:

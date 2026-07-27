@@ -1,7 +1,3 @@
-import json
-import pytest
-from unittest.mock import MagicMock, patch
-
 from app.generation.base import GeneratedProfile, GeneratedProfileClaim
 from app.generation.context import GenerationContext
 from app.generation.factory import create_text_generator, get_available_text_providers
@@ -56,7 +52,10 @@ class TestMockTextGenerationAdapter:
         )
         result = adapter.generate(ctx)
         assert result.data["language"] == "kk"
-        assert "бағаны" in result.data["hero"]["cta_text"].lower() or "есептеу" in result.data["hero"]["cta_text"].lower()
+        assert (
+            "бағаны" in result.data["hero"]["cta_text"].lower()
+            or "есептеу" in result.data["hero"]["cta_text"].lower()
+        )
 
     def test_increments_call_count(self):
         adapter = MockTextGenerationAdapter()
@@ -114,7 +113,9 @@ class TestTemplateTextGenerationAdapter:
         result = adapter.generate(ctx)
         verified_claims = [c for c in result.claims if c.verified]
         assert len(verified_claims) >= 2
-        assert any("Мебель-Мастер" in c.text or "TestCo" in c.text for c in result.claims)
+        assert any(
+            "Мебель-Мастер" in c.text or "TestCo" in c.text for c in result.claims
+        )
 
     def test_empty_services_fallback(self):
         adapter = TemplateTextGenerationAdapter()

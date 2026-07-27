@@ -8,12 +8,15 @@ def create_text_generator(provider: str | None = None):
 
     if provider == "openai":
         from app.generation.openai import OpenAITextGenerationAdapter
+
         return OpenAITextGenerationAdapter()
     elif provider == "mock":
         from app.generation.mock import MockTextGenerationAdapter
+
         return MockTextGenerationAdapter()
     else:
         from app.generation.template import TemplateTextGenerationAdapter
+
         return TemplateTextGenerationAdapter()
 
 

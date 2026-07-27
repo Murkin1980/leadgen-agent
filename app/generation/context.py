@@ -22,7 +22,9 @@ class GenerationContext:
     notes: str | None = None
 
     @classmethod
-    def from_lead(cls, lead, qualification_reasons: list[str] | None = None) -> "GenerationContext":
+    def from_lead(
+        cls, lead, qualification_reasons: list[str] | None = None
+    ) -> GenerationContext:
         social_links = []
         if lead.instagram:
             social_links.append(lead.instagram)

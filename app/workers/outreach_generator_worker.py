@@ -1,12 +1,15 @@
-import json
 import logging
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models.campaign import OutreachCampaign, OutreachMessage, MessageStatus, CampaignStatus
+from app.models.campaign import (
+    CampaignStatus,
+    MessageStatus,
+    OutreachCampaign,
+    OutreachMessage,
+)
 from app.models.lead import Lead
 from app.outreach.message_generator import MessageContext, generate_messages
 
@@ -16,15 +19,17 @@ logger = logging.getLogger(__name__)
 def run_outreach_generator(campaign_id: str) -> None:
     db: Session = SessionLocal()
     try:
-        campaign = db.query(OutreachCampaign).filter(
-            OutreachCampaign.id == campaign_id
-        ).first()
+        campaign = (
+            db.query(OutreachCampaign)
+            .filter(OutreachCampaign.id == campaign_id)
+            .first()
+        )
         if not campaign:
             logger.error("Campaign %s not found", campaign_id)
             return
 
         campaign.status = CampaignStatus.running.value
-        campaign.started_at = datetime.now(timezone.utc)
+        campaign.started_at = datetime.now(UTC)
         db.commit()
 
         messages = (
@@ -88,15 +93,17 @@ def run_outreach_generator(campaign_id: str) -> None:
             db.commit()
 
         campaign.status = CampaignStatus.ready.value
-        campaign.completed_at = datetime.now(timezone.utc)
+        campaign.completed_at = datetime.now(UTC)
         db.commit()
 
     except Exception:
         logger.exception("Outreach generator failed for campaign %s", campaign_id)
         try:
-            campaign = db.query(OutreachCampaign).filter(
-                OutreachCampaign.id == campaign_id
-            ).first()
+            campaign = (
+                db.query(OutreachCampaign)
+                .filter(OutreachCampaign.id == campaign_id)
+                .first()
+            )
             if campaign:
                 campaign.status = CampaignStatus.failed.value
                 db.commit()

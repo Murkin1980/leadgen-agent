@@ -6,10 +6,9 @@ remote codebase interfaces.
 
 import hashlib
 import hmac
-import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -21,15 +20,17 @@ from app.models.campaign import (
     OutreachCampaign,
     OutreachMessage,
 )
-from app.models.event import OutreachEvent
 from app.models.lead import ConsentStatus, Lead, LeadStatus
 from app.models.whatsapp import InboundMessage, WhatsAppTemplate, WhatsAppTemplateStatus
 from app.outreach.phone import PhoneNumberError, PhoneNumberService
 from app.outreach.service import can_send_message, cancel_pending_follow_ups
-from app.outreach.whatsapp_provider import WhatsAppCloudProvider
 from app.outreach.webhook_handler import process_webhook_event
-from app.security import generate_csrf_token, validate_csrf_token, verify_webhook_signature
-
+from app.outreach.whatsapp_provider import WhatsAppCloudProvider
+from app.security import (
+    generate_csrf_token,
+    validate_csrf_token,
+    verify_webhook_signature,
+)
 
 # Valid KZ phone numbers (no repeated digit suffixes)
 PH1 = "+77071234567"
@@ -42,6 +43,7 @@ PH7 = "+77012345678"
 
 
 # ── 1. Phone normalization ────────────────────────────────────────
+
 
 class TestPhoneNormalization:
     @pytest.mark.parametrize(
@@ -75,6 +77,7 @@ class TestPhoneNormalization:
 
 # ── 2. Masked logging ────────────────────────────────────────────
 
+
 class TestMaskedLogging:
     def test_mask_hides_middle_digits(self):
         masked = PhoneNumberService.mask("+77071234567")
@@ -90,6 +93,7 @@ class TestMaskedLogging:
 
 # ── 3. Sandbox allowlist (worker-level check) ────────────────────
 
+
 class TestSandboxAllowlist:
     def test_allowed_in_sandbox(self):
         lead = MagicMock()
@@ -100,6 +104,7 @@ class TestSandboxAllowlist:
             mock.outreach_enabled = True
             mock.sandbox_allowlist = {PH1}
             from app.workers.outreach_sender_worker import _production_policy_allows
+
             ok, _reason = _production_policy_allows(lead, PH1)
             assert ok is True
 
@@ -112,6 +117,7 @@ class TestSandboxAllowlist:
             mock.outreach_enabled = True
             mock.sandbox_allowlist = {PH1}
             from app.workers.outreach_sender_worker import _production_policy_allows
+
             ok, reason = _production_policy_allows(lead, PH2)
             assert ok is False
             assert "sandbox" in reason.lower()
@@ -122,11 +128,13 @@ class TestSandboxAllowlist:
             mock.outreach_mode = "disabled"
             mock.outreach_enabled = False
             from app.workers.outreach_sender_worker import _production_policy_allows
+
             ok, _reason = _production_policy_allows(lead, PH1)
             assert ok is False
 
 
 # ── 4. DNC blocking ──────────────────────────────────────────────
+
 
 class TestDNCBlocking:
     def test_dnc_lead_blocked(self, db):
@@ -135,10 +143,15 @@ class TestDNCBlocking:
             mock.outreach_enabled = True
             mock.sandbox_allowlist = set()
             from app.workers.outreach_sender_worker import _production_policy_allows
+
             lead = Lead(
-                name="DNC Lead", city="Almaty", phone=PH3,
-                status=LeadStatus.enriched.value, stage="ready_for_outreach",
-                do_not_contact=True, do_not_contact_reason="Opted out",
+                name="DNC Lead",
+                city="Almaty",
+                phone=PH3,
+                status=LeadStatus.enriched.value,
+                stage="ready_for_outreach",
+                do_not_contact=True,
+                do_not_contact_reason="Opted out",
             )
             db.add(lead)
             db.commit()
@@ -148,6 +161,7 @@ class TestDNCBlocking:
 
 
 # ── 5. Consent blocking ──────────────────────────────────────────
+
 
 class TestConsentBlocking:
     def test_unknown_consent_blocks_in_production(self):
@@ -159,6 +173,7 @@ class TestConsentBlocking:
             mock.outreach_enabled = True
             mock.sandbox_allowlist = set()
             from app.workers.outreach_sender_worker import _production_policy_allows
+
             ok, reason = _production_policy_allows(lead, PH4)
             assert ok is False
             assert "contact basis" in reason.lower()
@@ -172,11 +187,13 @@ class TestConsentBlocking:
             mock.outreach_enabled = True
             mock.sandbox_allowlist = set()
             from app.workers.outreach_sender_worker import _production_policy_allows
+
             ok, _reason = _production_policy_allows(lead, PH4)
             assert ok is True
 
 
 # ── 6. Manual approval requirement ───────────────────────────────
+
 
 class TestManualApproval:
     def test_draft_cannot_send(self, db):
@@ -187,21 +204,30 @@ class TestManualApproval:
             mock.outreach_quiet_hours_end = "00:00"
             mock.outreach_max_per_hour = 1000
             lead = Lead(
-                name="Draft Lead", city="Almaty", phone=PH5,
-                status=LeadStatus.enriched.value, stage="ready_for_outreach",
+                name="Draft Lead",
+                city="Almaty",
+                phone=PH5,
+                status=LeadStatus.enriched.value,
+                stage="ready_for_outreach",
             )
             db.add(lead)
             db.flush()
             campaign = OutreachCampaign(
-                id=str(uuid.uuid4())[:12], name="Test", channel="whatsapp",
-                language="ru", status="draft",
+                id=str(uuid.uuid4())[:12],
+                name="Test",
+                channel="whatsapp",
+                language="ru",
+                status="draft",
             )
             db.add(campaign)
             db.flush()
             msg = OutreachMessage(
-                id=str(uuid.uuid4())[:12], campaign_id=campaign.id,
-                lead_id=lead.id, channel="whatsapp",
-                recipient=PH5, body="Hi",
+                id=str(uuid.uuid4())[:12],
+                campaign_id=campaign.id,
+                lead_id=lead.id,
+                channel="whatsapp",
+                recipient=PH5,
+                body="Hi",
                 status=MessageStatus.draft.value,
             )
             db.add(msg)
@@ -213,56 +239,74 @@ class TestManualApproval:
 
 # ── 7. Service window check ──────────────────────────────────────
 
+
 class TestServiceWindowLogic:
     def test_sender_worker_service_window_active(self):
         from app.workers.outreach_sender_worker import _service_window_active
+
         lead = MagicMock()
-        lead.service_window_expires_at = datetime.now(timezone.utc) + timedelta(hours=12)
-        assert _service_window_active(lead, datetime.now(timezone.utc)) is True
+        lead.service_window_expires_at = datetime.now(UTC) + timedelta(hours=12)
+        assert _service_window_active(lead, datetime.now(UTC)) is True
 
     def test_sender_worker_service_window_expired(self):
         from app.workers.outreach_sender_worker import _service_window_active
+
         lead = MagicMock()
-        lead.service_window_expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
-        assert _service_window_active(lead, datetime.now(timezone.utc)) is False
+        lead.service_window_expires_at = datetime.now(UTC) - timedelta(hours=1)
+        assert _service_window_active(lead, datetime.now(UTC)) is False
 
     def test_sender_worker_service_window_none(self):
         from app.workers.outreach_sender_worker import _service_window_active
+
         lead = MagicMock()
         lead.service_window_expires_at = None
-        assert _service_window_active(lead, datetime.now(timezone.utc)) is False
+        assert _service_window_active(lead, datetime.now(UTC)) is False
 
 
 # ── 8. Webhook verification (GET) ────────────────────────────────
 
+
 class TestWebhookVerification:
     def test_valid_challenge(self):
         from fastapi.testclient import TestClient
+
         from app.main import app
+
         client = TestClient(app)
         with patch("app.api.whatsapp_routes.settings") as mock:
             mock.whatsapp_webhook_verify_token = "test_token"
             resp = client.get(
                 "/webhooks/whatsapp",
-                params={"hub.mode": "subscribe", "hub.verify_token": "test_token", "hub.challenge": "CHALLENGE_123"},
+                params={
+                    "hub.mode": "subscribe",
+                    "hub.verify_token": "test_token",
+                    "hub.challenge": "CHALLENGE_123",
+                },
             )
             assert resp.status_code == 200
             assert resp.text == "CHALLENGE_123"
 
     def test_invalid_token_returns_403(self):
         from fastapi.testclient import TestClient
+
         from app.main import app
+
         client = TestClient(app)
         with patch("app.api.whatsapp_routes.settings") as mock:
             mock.whatsapp_webhook_verify_token = "test_token"
             resp = client.get(
                 "/webhooks/whatsapp",
-                params={"hub.mode": "subscribe", "hub.verify_token": "wrong", "hub.challenge": "CHALLENGE_123"},
+                params={
+                    "hub.mode": "subscribe",
+                    "hub.verify_token": "wrong",
+                    "hub.challenge": "CHALLENGE_123",
+                },
             )
             assert resp.status_code == 403
 
 
 # ── 9. Webhook signature validation ──────────────────────────────
+
 
 class TestWebhookSignature:
     def test_valid_signature_with_prefix(self):
@@ -281,18 +325,21 @@ class TestWebhookSignature:
     def test_tampered_signature_rejected(self):
         payload = b'{"test": true}'
         secret = "my_secret"
-        sig = "sha256=" + hmac.HMAC(secret.encode(), payload, hashlib.sha256).hexdigest()
+        sig = (
+            "sha256=" + hmac.HMAC(secret.encode(), payload, hashlib.sha256).hexdigest()
+        )
         tampered = sig[:-1] + ("0" if sig[-1] != "0" else "1")
         assert verify_webhook_signature(payload, tampered, secret) is False
 
     def test_none_signature(self):
-        assert verify_webhook_signature(b'{}', None, "secret") is False
+        assert verify_webhook_signature(b"{}", None, "secret") is False
 
     def test_empty_secret(self):
-        assert verify_webhook_signature(b'{}', "sig", "") is False
+        assert verify_webhook_signature(b"{}", "sig", "") is False
 
     def test_whatsapp_routes_signature_check(self):
         from app.security import verify_whatsapp_signature
+
         raw = b'{"entry":[]}'
         secret = "test_secret"
         sig = "sha256=" + hmac.HMAC(secret.encode(), raw, hashlib.sha256).hexdigest()
@@ -304,33 +351,44 @@ class TestWebhookSignature:
 
     def test_whatsapp_routes_no_signature_rejected(self):
         from app.security import verify_whatsapp_signature
+
         with patch("app.security.webhook_signature.settings") as mock:
             mock.whatsapp_app_secret = "some_secret"
             mock.app_env = "production"
             mock.whatsapp_allow_mock_webhooks = False
-            assert verify_whatsapp_signature(b'{}', None) is False
+            assert verify_whatsapp_signature(b"{}", None) is False
 
 
 # ── 10. Webhook idempotency ──────────────────────────────────────
 
+
 class TestWebhookIdempotency:
     def test_duplicate_event_not_processed_twice(self, db):
         lead = Lead(
-            name="Idempotent", city="Almaty", phone=PH4,
-            status=LeadStatus.enriched.value, stage="ready_for_outreach",
+            name="Idempotent",
+            city="Almaty",
+            phone=PH4,
+            status=LeadStatus.enriched.value,
+            stage="ready_for_outreach",
         )
         db.add(lead)
         db.flush()
         campaign = OutreachCampaign(
-            id=str(uuid.uuid4())[:12], name="Test", channel="whatsapp",
-            language="ru", status="draft",
+            id=str(uuid.uuid4())[:12],
+            name="Test",
+            channel="whatsapp",
+            language="ru",
+            status="draft",
         )
         db.add(campaign)
         db.flush()
         msg = OutreachMessage(
-            id=str(uuid.uuid4())[:12], campaign_id=campaign.id,
-            lead_id=lead.id, channel="whatsapp",
-            recipient=PH4, body="Test",
+            id=str(uuid.uuid4())[:12],
+            campaign_id=campaign.id,
+            lead_id=lead.id,
+            channel="whatsapp",
+            recipient=PH4,
+            body="Test",
             status=MessageStatus.sent.value,
             provider_message_id="wamid.dup.test",
         )
@@ -338,9 +396,19 @@ class TestWebhookIdempotency:
         db.commit()
 
         payload = {
-            "entry": [{"changes": [{"value": {
-                "statuses": [{"id": "wamid.dup.test", "status": "delivered"}]
-            }}]}]
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "statuses": [
+                                    {"id": "wamid.dup.test", "status": "delivered"}
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
         }
         r1 = process_webhook_event("whatsapp", payload, signature_valid=True)
         assert r1["processed"] is True
@@ -352,29 +420,44 @@ class TestWebhookIdempotency:
 
 # ── 11. Inbound message creates reply + updates lead (via routes) ─
 
+
 class TestInboundReply:
     def test_inbound_via_whatsapp_routes(self, db):
         from fastapi.testclient import TestClient
+
         from app.main import app
 
         lead = Lead(
-            name="Replier", city="Almaty", phone=PH1,
+            name="Replier",
+            city="Almaty",
+            phone=PH1,
             whatsapp=PH1,
-            status=LeadStatus.enriched.value, stage="ready_for_outreach",
+            status=LeadStatus.enriched.value,
+            stage="ready_for_outreach",
         )
         db.add(lead)
         db.commit()
 
         client = TestClient(app)
         payload = {
-            "entry": [{"changes": [{"value": {
-                "messages": [{
-                    "id": f"wamid.inbound.{uuid.uuid4().hex[:8]}",
-                    "from": "77071234567",
-                    "type": "text",
-                    "text": {"body": "Interested!"},
-                }]
-            }}]}]
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "id": f"wamid.inbound.{uuid.uuid4().hex[:8]}",
+                                        "from": "77071234567",
+                                        "type": "text",
+                                        "text": {"body": "Interested!"},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
         }
         with patch("app.security.verify_whatsapp_signature", return_value=True):
             resp = client.post("/webhooks/whatsapp", json=payload)
@@ -388,25 +471,35 @@ class TestInboundReply:
 
     def test_inbound_cancels_pending_follow_ups(self, db):
         from fastapi.testclient import TestClient
+
         from app.main import app
 
         lead = Lead(
-            name="Cancel FU", city="Almaty", phone=PH2,
+            name="Cancel FU",
+            city="Almaty",
+            phone=PH2,
             whatsapp=PH2,
-            status=LeadStatus.enriched.value, stage="ready_for_outreach",
+            status=LeadStatus.enriched.value,
+            stage="ready_for_outreach",
         )
         db.add(lead)
         db.flush()
         campaign = OutreachCampaign(
-            id=str(uuid.uuid4())[:12], name="Test", channel="whatsapp",
-            language="ru", status="draft",
+            id=str(uuid.uuid4())[:12],
+            name="Test",
+            channel="whatsapp",
+            language="ru",
+            status="draft",
         )
         db.add(campaign)
         db.flush()
         msg = OutreachMessage(
-            id=str(uuid.uuid4())[:12], campaign_id=campaign.id,
-            lead_id=lead.id, channel="whatsapp",
-            recipient=PH2, body="Follow-up",
+            id=str(uuid.uuid4())[:12],
+            campaign_id=campaign.id,
+            lead_id=lead.id,
+            channel="whatsapp",
+            recipient=PH2,
+            body="Follow-up",
             status=MessageStatus.approved.value,
         )
         db.add(msg)
@@ -414,14 +507,24 @@ class TestInboundReply:
 
         client = TestClient(app)
         payload = {
-            "entry": [{"changes": [{"value": {
-                "messages": [{
-                    "id": f"wamid.cancel.{uuid.uuid4().hex[:8]}",
-                    "from": "77072345678",
-                    "type": "text",
-                    "text": {"body": "Got it"},
-                }]
-            }}]}]
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "id": f"wamid.cancel.{uuid.uuid4().hex[:8]}",
+                                        "from": "77072345678",
+                                        "type": "text",
+                                        "text": {"body": "Got it"},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
         }
         with patch("app.security.verify_whatsapp_signature", return_value=True):
             resp = client.post("/webhooks/whatsapp", json=payload)
@@ -433,34 +536,50 @@ class TestInboundReply:
 
 # ── 12. Cancel pending follow-ups service function ───────────────
 
+
 class TestCancelFollowUps:
     def test_cancels_approved_and_queued(self, db):
         lead = Lead(
-            name="FollowUp", city="Almaty", phone=PH5,
-            status=LeadStatus.enriched.value, stage="ready_for_outreach",
+            name="FollowUp",
+            city="Almaty",
+            phone=PH5,
+            status=LeadStatus.enriched.value,
+            stage="ready_for_outreach",
         )
         db.add(lead)
         db.flush()
         campaign1 = OutreachCampaign(
-            id=str(uuid.uuid4())[:12], name="Test1", channel="whatsapp",
-            language="ru", status="draft",
+            id=str(uuid.uuid4())[:12],
+            name="Test1",
+            channel="whatsapp",
+            language="ru",
+            status="draft",
         )
         campaign2 = OutreachCampaign(
-            id=str(uuid.uuid4())[:12], name="Test2", channel="email",
-            language="ru", status="draft",
+            id=str(uuid.uuid4())[:12],
+            name="Test2",
+            channel="email",
+            language="ru",
+            status="draft",
         )
         db.add_all([campaign1, campaign2])
         db.flush()
         approved_msg = OutreachMessage(
-            id=str(uuid.uuid4())[:12], campaign_id=campaign1.id,
-            lead_id=lead.id, channel="whatsapp",
-            recipient=PH5, body="Approved",
+            id=str(uuid.uuid4())[:12],
+            campaign_id=campaign1.id,
+            lead_id=lead.id,
+            channel="whatsapp",
+            recipient=PH5,
+            body="Approved",
             status=MessageStatus.approved.value,
         )
         queued_msg = OutreachMessage(
-            id=str(uuid.uuid4())[:12], campaign_id=campaign2.id,
-            lead_id=lead.id, channel="email",
-            recipient=PH5, body="Queued",
+            id=str(uuid.uuid4())[:12],
+            campaign_id=campaign2.id,
+            lead_id=lead.id,
+            channel="email",
+            recipient=PH5,
+            body="Queued",
             status=MessageStatus.queued.value,
         )
         db.add_all([approved_msg, queued_msg])
@@ -478,6 +597,7 @@ class TestCancelFollowUps:
 
 # ── 13. CSRF token validation ────────────────────────────────────
 
+
 class TestCSRFPhase06:
     def test_generate_and_validate(self):
         token = generate_csrf_token()
@@ -494,32 +614,39 @@ class TestCSRFPhase06:
 
 # ── 14. Secrets absent from logs ─────────────────────────────────
 
+
 class TestSecretsNotInLogs:
     def test_mask_phone_not_full_number(self):
         masked = PhoneNumberService.mask(PH6)
         assert "******" in masked
 
     def test_whatsapp_log_masks_recipient(self, caplog):
-        with caplog.at_level(logging.WARNING):
-            with patch("app.outreach.whatsapp_provider.settings") as mock:
-                mock.whatsapp_cloud_api_token = "REAL_SECRET_TOKEN"
-                mock.whatsapp_cloud_phone_number_id = "12345"
-                mock.whatsapp_graph_api_version = "v23.0"
-                mock.whatsapp_request_timeout_seconds = 30
-                mock.whatsapp_app_secret = ""
-                provider = WhatsAppCloudProvider()
-                provider.send(recipient=PH6, body="test")
+        with (
+            caplog.at_level(logging.WARNING),
+            patch("app.outreach.whatsapp_provider.settings") as mock,
+        ):
+            mock.whatsapp_cloud_api_token = "REAL_SECRET_TOKEN"
+            mock.whatsapp_cloud_phone_number_id = "12345"
+            mock.whatsapp_graph_api_version = "v23.0"
+            mock.whatsapp_request_timeout_seconds = 30
+            mock.whatsapp_app_secret = ""
+            provider = WhatsAppCloudProvider()
+            provider.send(recipient=PH6, body="test")
         for record in caplog.records:
             assert "REAL_SECRET_TOKEN" not in record.message
 
 
 # ── 15. Migration model smoke tests ──────────────────────────────
 
+
 class TestMigration006Models:
     def test_whatsapp_template_crud(self, db):
         t = WhatsAppTemplate(
-            id="tpl_test1", name="test_template", language_code="ru",
-            body_template="Hello {{name}}", status=WhatsAppTemplateStatus.draft.value,
+            id="tpl_test1",
+            name="test_template",
+            language_code="ru",
+            body_template="Hello {{name}}",
+            status=WhatsAppTemplateStatus.draft.value,
         )
         db.add(t)
         db.commit()
@@ -529,9 +656,11 @@ class TestMigration006Models:
 
     def test_inbound_message_model(self, db):
         im = InboundMessage(
-            id="inb_test1", provider="whatsapp",
+            id="inb_test1",
+            provider="whatsapp",
             provider_message_id=f"wamid.unique.{uuid.uuid4().hex[:8]}",
-            from_phone=PH7, message_type="text",
+            from_phone=PH7,
+            message_type="text",
             text_body="Hello",
         )
         db.add(im)
@@ -542,7 +671,9 @@ class TestMigration006Models:
 
     def test_lead_consent_fields(self, db):
         lead = Lead(
-            name="Consent Test", city="Almaty", phone=PH7,
+            name="Consent Test",
+            city="Almaty",
+            phone=PH7,
             status=LeadStatus.enriched.value,
             consent_status=ConsentStatus.consented.value,
             consent_source="manual_review",
@@ -560,21 +691,29 @@ class TestMigration006Models:
 
     def test_outreach_message_retry_fields(self, db):
         lead = Lead(
-            name="Retry Test", city="Almaty", phone=PH6,
+            name="Retry Test",
+            city="Almaty",
+            phone=PH6,
             status=LeadStatus.enriched.value,
         )
         db.add(lead)
         db.flush()
         campaign = OutreachCampaign(
-            id=str(uuid.uuid4())[:12], name="Retry", channel="whatsapp",
-            language="ru", status="draft",
+            id=str(uuid.uuid4())[:12],
+            name="Retry",
+            channel="whatsapp",
+            language="ru",
+            status="draft",
         )
         db.add(campaign)
         db.flush()
         msg = OutreachMessage(
-            id=str(uuid.uuid4())[:12], campaign_id=campaign.id,
-            lead_id=lead.id, channel="whatsapp",
-            recipient=PH6, body="Retry test",
+            id=str(uuid.uuid4())[:12],
+            campaign_id=campaign.id,
+            lead_id=lead.id,
+            channel="whatsapp",
+            recipient=PH6,
+            body="Retry test",
             status=MessageStatus.retrying.value,
             attempt_count=3,
             retryable=True,
@@ -595,10 +734,12 @@ class TestMigration006Models:
 
 # ── 16. WhatsApp provider mock transport ─────────────────────────
 
+
 class TestWhatsAppProviderMockTransport:
     def _make_provider(self, response_body: dict, status_code: int = 200):
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(status_code, json=response_body)
+
         transport = httpx.MockTransport(handler)
         client = httpx.Client(transport=transport)
         return WhatsAppCloudProvider(client=client)
@@ -611,12 +752,12 @@ class TestWhatsAppProviderMockTransport:
         mock_settings.whatsapp_request_timeout_seconds = 30
         mock_settings.whatsapp_app_secret = ""
 
-        provider = self._make_provider({
-            "messages": [{"id": "wamid.ok123"}]
-        })
+        provider = self._make_provider({"messages": [{"id": "wamid.ok123"}]})
         result = provider.send(
-            recipient=PH1, body="Hello",
-            template_name="test_template", language_code="ru",
+            recipient=PH1,
+            body="Hello",
+            template_name="test_template",
+            language_code="ru",
         )
         assert result.success is True
         assert result.provider_message_id == "wamid.ok123"
@@ -631,7 +772,8 @@ class TestWhatsAppProviderMockTransport:
 
         provider = self._make_provider({})
         result = provider.send(
-            recipient=PH1, body="Hello",
+            recipient=PH1,
+            body="Hello",
             service_window_active=False,
         )
         assert result.success is False
@@ -645,11 +787,10 @@ class TestWhatsAppProviderMockTransport:
         mock_settings.whatsapp_request_timeout_seconds = 30
         mock_settings.whatsapp_app_secret = ""
 
-        provider = self._make_provider({
-            "messages": [{"id": "wamid.free123"}]
-        })
+        provider = self._make_provider({"messages": [{"id": "wamid.free123"}]})
         result = provider.send(
-            recipient=PH1, body="Hello!",
+            recipient=PH1,
+            body="Hello!",
             service_window_active=True,
         )
         assert result.success is True
@@ -668,8 +809,10 @@ class TestWhatsAppProviderMockTransport:
             status_code=429,
         )
         result = provider.send(
-            recipient=PH1, body="Hello",
-            template_name="test", service_window_active=True,
+            recipient=PH1,
+            body="Hello",
+            template_name="test",
+            service_window_active=True,
         )
         assert result.success is False
         assert result.retryable is True
@@ -687,8 +830,10 @@ class TestWhatsAppProviderMockTransport:
             status_code=401,
         )
         result = provider.send(
-            recipient=PH1, body="Hello",
-            template_name="test", service_window_active=True,
+            recipient=PH1,
+            body="Hello",
+            template_name="test",
+            service_window_active=True,
         )
         assert result.success is False
         assert result.retryable is False
@@ -696,9 +841,11 @@ class TestWhatsAppProviderMockTransport:
 
 # ── 17. Outreach provider send interface ─────────────────────────
 
+
 class TestProviderInterface:
     def test_mock_provider_send(self):
         from app.outreach.mock_provider import MockOutreachProvider
+
         provider = MockOutreachProvider()
         result = provider.send(recipient=PH1, body="Test")
         assert result.success is True
@@ -706,6 +853,7 @@ class TestProviderInterface:
 
     def test_mock_provider_get_status(self):
         from app.outreach.mock_provider import MockOutreachProvider
+
         provider = MockOutreachProvider()
         status = provider.get_status("wamid.test")
         assert status is not None
@@ -713,12 +861,20 @@ class TestProviderInterface:
 
 # ── 18. Audit log records ────────────────────────────────────────
 
+
 class TestAuditLogging:
     def test_audit_event_created(self, db):
-        from app.security import log_audit_event
         from app.models.audit import AuditLog
-        log_audit_event(db, "test_action", "test_entity", "test_123",
-                        actor="test_user", details={"key": "value"})
+        from app.security import log_audit_event
+
+        log_audit_event(
+            db,
+            "test_action",
+            "test_entity",
+            "test_123",
+            actor="test_user",
+            details={"key": "value"},
+        )
         entry = db.query(AuditLog).filter(AuditLog.entity_id == "test_123").first()
         assert entry is not None
         assert entry.action == "test_action"
@@ -728,23 +884,34 @@ class TestAuditLogging:
 
 # ── 19. Stage transitions ────────────────────────────────────────
 
+
 class TestStageTransitions:
     def test_valid_transition(self, db):
         from app.outreach.stage_service import transition_lead_stage
+
         lead = Lead(
-            name="Stage Test", city="Almaty", phone=PH3,
-            status=LeadStatus.enriched.value, stage="needs_review",
+            name="Stage Test",
+            city="Almaty",
+            phone=PH3,
+            status=LeadStatus.enriched.value,
+            stage="needs_review",
         )
         db.add(lead)
         db.commit()
-        result = transition_lead_stage(db, lead.id, "ready_for_outreach", "test", "System")
+        result = transition_lead_stage(
+            db, lead.id, "ready_for_outreach", "test", "System"
+        )
         assert result.stage == "ready_for_outreach"
 
     def test_invalid_transition_raises(self, db):
         from app.outreach.stage_service import transition_lead_stage
+
         lead = Lead(
-            name="Bad Stage", city="Almaty", phone=PH4,
-            status=LeadStatus.enriched.value, stage="new",
+            name="Bad Stage",
+            city="Almaty",
+            phone=PH4,
+            status=LeadStatus.enriched.value,
+            stage="new",
         )
         db.add(lead)
         db.commit()
@@ -754,10 +921,13 @@ class TestStageTransitions:
 
 # ── 20. Config production validation ─────────────────────────────
 
+
 class TestConfigValidation:
     def test_production_requires_whatsapp_secrets(self):
         from pydantic import ValidationError
+
         from app.config import Settings
+
         with pytest.raises(ValidationError):
             Settings(
                 app_env="test_validation",
@@ -773,6 +943,7 @@ class TestConfigValidation:
 
     def test_sandbox_mode_no_secrets_required(self):
         from app.config import Settings
+
         s = Settings(
             app_env="test_sandbox",
             outreach_mode="sandbox",

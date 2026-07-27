@@ -1,15 +1,15 @@
 """API keys and scopes: hash-only storage, revocation, expiration, rate limiting."""
+
 from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.audit import AuditLog
 from app.security import log_audit_event
 
 
@@ -81,11 +81,12 @@ def create_api_key(
     expires_in_days: int | None = None,
 ) -> dict[str, Any]:
     """Create a new API key. Returns key record with plaintext (only time shown)."""
-    from app.models.api_key import ApiKeyModel
     import json
 
+    from app.models.api_key import ApiKeyModel
+
     plaintext, key_hash = generate_api_key()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = (now + timedelta(days=expires_in_days)) if expires_in_days else None
 
     key_id = f"key_{secrets.token_hex(8)}"
@@ -100,7 +101,10 @@ def create_api_key(
     )
 
     log_audit_event(
-        db, "api_key_created", "api_key", key_id,
+        db,
+        "api_key_created",
+        "api_key",
+        key_id,
         actor=created_by,
         details={"name": name, "scopes": scopes, "expires_in_days": expires_in_days},
     )
@@ -134,14 +138,13 @@ def verify_api_key(
         return False, "Invalid API key"
     if record.revoked:
         return False, "API key has been revoked"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if record.expires_at and record.expires_at < now:
         return False, "API key has expired"
 
     required_level = SCOPE_HIERARCHY.get(ApiScope(required_scope), 0)
     has_scope = any(
-        SCOPE_HIERARCHY.get(ApiScope(s), 0) >= required_level
-        for s in record.scopes
+        SCOPE_HIERARCHY.get(ApiScope(s), 0) >= required_level for s in record.scopes
     )
     if not has_scope:
         return False, f"Insufficient scope: requires {required_scope}"
@@ -160,7 +163,10 @@ def revoke_api_key(db: Session, key_id: str, actor: str = "admin") -> bool:
         return False
     record.revoked = True
     log_audit_event(
-        db, "api_key_revoked", "api_key", key_id,
+        db,
+        "api_key_revoked",
+        "api_key",
+        key_id,
         actor=actor,
         details={"name": record.name},
     )

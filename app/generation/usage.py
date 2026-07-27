@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, date, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import func
 
@@ -20,7 +19,7 @@ class UsageTracker:
         self._daily_date: date | None = None
 
     def _ensure_today(self) -> None:
-        today = date.today()
+        today = datetime.now(UTC).date()
         if self._daily_date != today:
             self._daily_date = today
             self._daily_cost = 0.0
@@ -34,11 +33,13 @@ class UsageTracker:
                 db.query(func.count(ContentGeneration.id))
                 .filter(
                     ContentGeneration.lead_id == job_id,
-                    ContentGeneration.status.in_([
-                        ContentGenerationStatus.succeeded.value,
-                        ContentGenerationStatus.running.value,
-                        ContentGenerationStatus.queued.value,
-                    ]),
+                    ContentGeneration.status.in_(
+                        [
+                            ContentGenerationStatus.succeeded.value,
+                            ContentGenerationStatus.running.value,
+                            ContentGenerationStatus.queued.value,
+                        ]
+                    ),
                 )
                 .scalar()
             )
@@ -80,9 +81,9 @@ class UsageTracker:
         self._ensure_today()
         db = SessionLocal()
         try:
-            today_start = datetime.combine(date.today(), datetime.min.time()).replace(
-                tzinfo=timezone.utc
-            )
+            today_start = datetime.combine(
+                datetime.now(UTC).date(), datetime.min.time()
+            ).replace(tzinfo=UTC)
             stats = (
                 db.query(
                     func.count(ContentGeneration.id),

@@ -1,6 +1,5 @@
 import logging
-import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -34,7 +33,7 @@ def run_deployer(deployment_id: str) -> None:
             return
 
         deployment.status = DeploymentStatus.running.value
-        deployment.started_at = datetime.now(timezone.utc)
+        deployment.started_at = datetime.now(UTC)
         db.commit()
 
         adapter = _get_adapter()
@@ -48,7 +47,7 @@ def run_deployer(deployment_id: str) -> None:
             deployment.status = DeploymentStatus.succeeded.value
             deployment.deployment_url = result.url
             deployment.provider_deployment_id = result.deployment_id
-            deployment.completed_at = datetime.now(timezone.utc)
+            deployment.completed_at = datetime.now(UTC)
             db.commit()
 
             if deployment.job_id:
@@ -69,17 +68,19 @@ def run_deployer(deployment_id: str) -> None:
         else:
             deployment.status = DeploymentStatus.failed.value
             deployment.error_message = result.error
-            deployment.completed_at = datetime.now(timezone.utc)
+            deployment.completed_at = datetime.now(UTC)
             db.commit()
             logger.error("Deployment %s failed: %s", deployment_id, result.error)
 
     except Exception as exc:
         try:
-            deployment = db.query(Deployment).filter(Deployment.id == deployment_id).first()
+            deployment = (
+                db.query(Deployment).filter(Deployment.id == deployment_id).first()
+            )
             if deployment:
                 deployment.status = DeploymentStatus.failed.value
                 deployment.error_message = str(exc)[:2000]
-                deployment.completed_at = datetime.now(timezone.utc)
+                deployment.completed_at = datetime.now(UTC)
                 db.commit()
         except Exception:
             db.rollback()

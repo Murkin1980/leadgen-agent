@@ -30,7 +30,10 @@ class TestReadinessStatusCode:
         assert body["status"] == "ready"
 
     def test_returns_503_when_a_dependency_is_down(self, client, db):
-        with patch("app.workers.connection.redis_conn.ping", side_effect=ConnectionError("down")):
+        with patch(
+            "app.workers.connection.redis_conn.ping",
+            side_effect=ConnectionError("down"),
+        ):
             response = client.get("/api/v1/readiness")
         assert response.status_code == 503
         body = response.json()

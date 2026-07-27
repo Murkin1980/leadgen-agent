@@ -1,12 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import pytest
 from app.models.deployment import Deployment, DeploymentStatus
-from app.models.landing_page import LandingPage, LandingStatus
-from app.models.lead import Lead, LeadStatus
-from app.models.search_job import SearchJob, JobStatus
-from app.workers.connection import redis_conn
+from app.models.search_job import JobStatus, SearchJob
 
 
 class TestDeploymentModel:
@@ -26,7 +22,9 @@ class TestDeploymentModel:
         assert deployment.provider == "mock"
 
     def test_deployment_with_job(self, db):
-        job = SearchJob(city="Алматы", category="Мебель", status=JobStatus.completed.value)
+        job = SearchJob(
+            city="Алматы", category="Мебель", status=JobStatus.completed.value
+        )
         db.add(job)
         db.flush()
 
@@ -51,11 +49,11 @@ class TestDeploymentModel:
         db.commit()
 
         deployment.status = DeploymentStatus.running.value
-        deployment.started_at = datetime.now(timezone.utc)
+        deployment.started_at = datetime.now(UTC)
         db.commit()
 
         deployment.status = DeploymentStatus.succeeded.value
-        deployment.completed_at = datetime.now(timezone.utc)
+        deployment.completed_at = datetime.now(UTC)
         db.commit()
         db.refresh(deployment)
         assert deployment.status == "succeeded"

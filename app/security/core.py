@@ -5,13 +5,10 @@ import hmac
 import json
 import secrets
 import time
-from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models.audit import AuditLog
-
 
 _csrf_tokens: dict[str, float] = {}
 _login_attempts: dict[str, list[float]] = {}
@@ -51,9 +48,7 @@ def verify_webhook_signature(
 ) -> bool:
     if not signature or not secret:
         return False
-    expected = hmac.HMAC(
-        secret.encode(), payload, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.HMAC(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature.removeprefix("sha256="))
 
 

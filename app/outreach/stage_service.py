@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.models.lead import Lead
-from app.models.stage import LeadStage, LeadStageHistory
+from app.models.stage import LeadStageHistory
 from app.security import log_audit_event
 
 logger = logging.getLogger(__name__)
@@ -42,8 +41,7 @@ def transition_lead_stage(
     allowed = VALID_TRANSITIONS.get(from_stage, [])
     if to_stage not in allowed:
         raise ValueError(
-            f"Invalid transition: {from_stage} -> {to_stage}. "
-            f"Allowed: {allowed}"
+            f"Invalid transition: {from_stage} -> {to_stage}. Allowed: {allowed}"
         )
 
     lead.stage = to_stage
@@ -63,7 +61,10 @@ def transition_lead_stage(
         lead.do_not_contact_reason = None
 
     log_audit_event(
-        db, "stage_change", "lead", str(lead_id),
+        db,
+        "stage_change",
+        "lead",
+        str(lead_id),
         actor=changed_by,
         details={"from": from_stage, "to": to_stage, "reason": reason},
     )

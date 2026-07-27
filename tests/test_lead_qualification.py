@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from app.qualification.service import LeadQualifier, QualificationResult, qualify_lead
 
 
@@ -19,7 +17,9 @@ class TestLeadQualifier:
 
     def test_qualify_lead_with_website_penalty(self):
         qualifier = LeadQualifier(min_score=0)
-        result_with = qualifier.qualify({"phone": "+77001112233", "website": "https://example.com"})
+        result_with = qualifier.qualify(
+            {"phone": "+77001112233", "website": "https://example.com"}
+        )
         result_without = qualifier.qualify({"phone": "+77001112233", "website": None})
         assert result_with.score < result_without.score
 
@@ -45,12 +45,14 @@ class TestLeadQualifier:
 
     def test_qualify_lead_qualified(self):
         qualifier = LeadQualifier(min_score=50)
-        result = qualifier.qualify({
-            "phone": "+77001112233",
-            "instagram": "@test",
-            "rating": 4.5,
-            "reviews_count": 50,
-        })
+        result = qualifier.qualify(
+            {
+                "phone": "+77001112233",
+                "instagram": "@test",
+                "rating": 4.5,
+                "reviews_count": 50,
+            }
+        )
         assert result.qualified is True
         assert result.score >= 50
 
@@ -62,12 +64,14 @@ class TestLeadQualifier:
 
     def test_qualify_lead_reasons(self):
         qualifier = LeadQualifier(min_score=0)
-        result = qualifier.qualify({
-            "phone": "+77001112233",
-            "instagram": "@test",
-            "rating": 4.5,
-            "reviews_count": 50,
-        })
+        result = qualifier.qualify(
+            {
+                "phone": "+77001112233",
+                "instagram": "@test",
+                "rating": 4.5,
+                "reviews_count": 50,
+            }
+        )
         assert len(result.reasons) > 0
         assert any("phone" in r.lower() for r in result.reasons)
 

@@ -1,41 +1,23 @@
 """Phase 07 production routes: readiness, inbox, backup, retention, template sync, API keys, pilot."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.metrics import (
-    active_workers,
-    api_request_latency,
-    db_errors_total,
-    deployments_total,
-    landing_pages_published,
-    leads_collected_total,
-    messages_dead_letter_total,
-    messages_delivered_total,
-    messages_failed_total,
-    messages_read_total,
-    messages_retried_total,
-    messages_sent_total,
-    queue_depth,
-    webhook_duplicate_total,
-    webhook_processed_total,
     metrics_router,
 )
 from app.pilot import (
-    is_pilot_mode,
     pilot_kill_switch,
     pilot_report,
     pilot_status,
-    pilot_validate_lead_count,
-    pilot_validate_message,
 )
 from app.security import log_audit_event
 
@@ -46,6 +28,7 @@ router = APIRouter()
 
 # ── Readiness ─────────────────────────────────────────────────────
 
+
 @router.get("/readiness")
 def readiness(db: Session = Depends(get_db)):
     """Kubernetes-style readiness probe.
@@ -53,6 +36,7 @@ def readiness(db: Session = Depends(get_db)):
     Returns HTTP 503 if any critical dependency is down.
     """
     import sqlalchemy
+
     from app.workers.connection import redis_conn
 
     checks: dict[str, dict] = {}
@@ -76,6 +60,7 @@ def readiness(db: Session = Depends(get_db)):
     try:
         from alembic.config import Config
         from alembic.script import ScriptDirectory
+
         config = Config("alembic.ini")
         script = ScriptDirectory.from_config(config)
         heads = script.get_heads()
@@ -88,7 +73,10 @@ def readiness(db: Session = Depends(get_db)):
     checks["outreach_mode"] = {"ok": True, "mode": outreach_mode}
 
     # WhatsApp config
-    whatsapp_configured = bool(settings.whatsapp_cloud_api_token and settings.whatsapp_cloud_business_account_id)
+    whatsapp_configured = bool(
+        settings.whatsapp_cloud_api_token
+        and settings.whatsapp_cloud_business_account_id
+    )
     checks["whatsapp"] = {"ok": True, "configured": whatsapp_configured}
 
     all_ok = all(c.get("ok", False) for c in checks.values())
@@ -99,7 +87,7 @@ def readiness(db: Session = Depends(get_db)):
         content={
             "status": "ready" if all_ok else "not_ready",
             "checks": checks,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "version": "0.7.0",
         },
     )
@@ -107,12 +95,17 @@ def readiness(db: Session = Depends(get_db)):
 
 # ── Template Sync ─────────────────────────────────────────────────
 
+
 @router.post("/templates/sync")
 def sync_templates_endpoint(
     provider: str = "mock",
     db: Session = Depends(get_db),
 ):
-    from app.outreach.template_sync import MockTemplateSyncAdapter, MetaTemplateSyncAdapter, sync_templates
+    from app.outreach.template_sync import (
+        MetaTemplateSyncAdapter,
+        MockTemplateSyncAdapter,
+        sync_templates,
+    )
 
     if provider == "meta":
         adapter = MetaTemplateSyncAdapter()
@@ -121,9 +114,16 @@ def sync_templates_endpoint(
 
     result = sync_templates(db, adapter)
     log_audit_event(
-        db, "template_sync", "whatsapp_templates", "bulk",
+        db,
+        "template_sync",
+        "whatsapp_templates",
+        "bulk",
         actor="system",
-        details={"created": result.created, "updated": result.updated, "errors": result.errors},
+        details={
+            "created": result.created,
+            "updated": result.updated,
+            "errors": result.errors,
+        },
     )
     return {
         "created": result.created,
@@ -139,6 +139,7 @@ def list_templates(
     db: Session = Depends(get_db),
 ):
     from app.models.whatsapp import WhatsAppTemplate
+
     q = db.query(WhatsAppTemplate)
     if status:
         q = q.filter(WhatsAppTemplate.status == status)
@@ -146,6 +147,7 @@ def list_templates(
 
 
 # ── Operator Inbox ────────────────────────────────────────────────
+
 
 @router.get("/inbox/conversations")
 def list_conversations_endpoint(
@@ -156,7 +158,10 @@ def list_conversations_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.inbox import list_conversations
-    return list_conversations(db, lead_id=lead_id, has_unread=has_unread, limit=limit, offset=offset)
+
+    return list_conversations(
+        db, lead_id=lead_id, has_unread=has_unread, limit=limit, offset=offset
+    )
 
 
 @router.get("/inbox/conversations/{lead_id}")
@@ -166,6 +171,7 @@ def get_conversation_history_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.inbox import get_conversation_history
+
     history = get_conversation_history(db, lead_id, limit=limit)
     if not history:
         raise HTTPException(status_code=404, detail="No conversation history")
@@ -178,6 +184,7 @@ def mark_handled_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.inbox import mark_handled
+
     ok = mark_handled(db, message_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Message not found")
@@ -190,6 +197,7 @@ def can_reply_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.inbox import can_reply_manually
+
     allowed, reason = can_reply_manually(db, lead_id)
     return {"lead_id": lead_id, "can_reply": allowed, "reason": reason}
 
@@ -202,6 +210,7 @@ def reply_to_lead_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.inbox import can_reply_manually, send_template_reply
+
     allowed, reason = can_reply_manually(db, lead_id)
     if not allowed:
         raise HTTPException(status_code=403, detail=f"Cannot reply: {reason}")
@@ -220,6 +229,7 @@ def template_reply_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.inbox import send_template_reply
+
     ok, result = send_template_reply(db, lead_id, body, template_name=template_name)
     if not ok:
         raise HTTPException(status_code=400, detail=result)
@@ -228,12 +238,14 @@ def template_reply_endpoint(
 
 # ── Backup & Restore ─────────────────────────────────────────────
 
+
 @router.post("/backup/create")
 def create_backup_endpoint(
     output_dir: str = "backups",
     db: Session = Depends(get_db),
 ):
     from app.backup import create_backup
+
     manifest = create_backup(output_dir)
     log_audit_event(db, "backup_created", "backup", "full", actor="admin")
     return {"manifest": manifest}
@@ -242,6 +254,7 @@ def create_backup_endpoint(
 @router.post("/backup/verify")
 def verify_backup_endpoint(backup_dir: str = "backups"):
     from app.backup import verify_backup
+
     ok, errors = verify_backup(backup_dir)
     return {"valid": ok, "errors": errors}
 
@@ -255,22 +268,28 @@ def restore_backup_endpoint(
     if not target_database_url:
         target_database_url = settings.database_url
     from app.backup import restore_database
+
     result = restore_database(backup_dir, target_database_url)
-    log_audit_event(db, "backup_restored", "backup", "full", actor="admin", details=result)
+    log_audit_event(
+        db, "backup_restored", "backup", "full", actor="admin", details=result
+    )
     return result
 
 
 # ── Retention ─────────────────────────────────────────────────────
 
+
 @router.get("/retention/config")
 def get_retention_config_endpoint():
     from app.retention import get_retention_config
+
     return get_retention_config()
 
 
 @router.get("/retention/preview")
 def retention_preview_endpoint(db: Session = Depends(get_db)):
     from app.retention import purge_preview
+
     return purge_preview(db)
 
 
@@ -281,6 +300,7 @@ def retention_execute_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.retention import purge_execute
+
     return purge_execute(db, actor=actor, dry_run=dry_run)
 
 
@@ -291,6 +311,7 @@ def anonymize_lead_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.retention import anonymize_lead
+
     ok = anonymize_lead(db, lead_id, actor=actor)
     if not ok:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -298,6 +319,7 @@ def anonymize_lead_endpoint(
 
 
 # ── API Keys ──────────────────────────────────────────────────────
+
 
 @router.post("/api-keys")
 def create_api_key_endpoint(
@@ -307,8 +329,15 @@ def create_api_key_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.api_keys import create_api_key
+
     scope_list = [s.strip() for s in scopes.split(",")]
-    result = create_api_key(db, name=name, scopes=scope_list, created_by="admin", expires_in_days=expires_in_days)
+    result = create_api_key(
+        db,
+        name=name,
+        scopes=scope_list,
+        created_by="admin",
+        expires_in_days=expires_in_days,
+    )
     return result
 
 
@@ -318,6 +347,7 @@ def revoke_api_key_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.api_keys import revoke_api_key
+
     ok = revoke_api_key(db, key_id, actor="admin")
     if not ok:
         raise HTTPException(status_code=404, detail="API key not found")
@@ -325,6 +355,7 @@ def revoke_api_key_endpoint(
 
 
 # ── Pilot Mode ────────────────────────────────────────────────────
+
 
 @router.get("/pilot/status")
 def pilot_status_endpoint(db: Session = Depends(get_db)):
@@ -351,6 +382,7 @@ router.include_router(metrics_router)
 
 # ── Dead Letter ───────────────────────────────────────────────────
 
+
 @router.get("/dead-letters")
 def list_dead_letters_endpoint(
     limit: int = 50,
@@ -358,6 +390,7 @@ def list_dead_letters_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.dead_letter import list_dead_letters
+
     return list_dead_letters(db, limit=limit, offset=offset)
 
 
@@ -367,6 +400,7 @@ def requeue_dead_letter_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.dead_letter import requeue_dead_letter
+
     ok, reason = requeue_dead_letter(db, message_id)
     if not ok:
         raise HTTPException(status_code=400, detail=reason)
@@ -380,6 +414,7 @@ def cancel_dead_letter_endpoint(
     db: Session = Depends(get_db),
 ):
     from app.outreach.dead_letter import cancel_dead_letter
+
     ok = cancel_dead_letter(db, message_id, actor=actor)
     if not ok:
         raise HTTPException(status_code=404, detail="Message not found")

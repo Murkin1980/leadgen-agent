@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time, timezone, timedelta
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models.campaign import OutreachMessage, MessageStatus, OutreachCampaign, CampaignStatus
+from app.models.campaign import (
+    CampaignStatus,
+    MessageStatus,
+    OutreachCampaign,
+    OutreachMessage,
+)
 from app.models.lead import Lead
 
 logger = logging.getLogger(__name__)
@@ -27,14 +32,16 @@ def is_quiet_hours() -> bool:
 def check_hourly_rate_limit() -> bool:
     db = SessionLocal()
     try:
-        one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+        one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
         count = (
             db.query(func.count(OutreachMessage.id))
             .filter(
-                OutreachMessage.status.in_([
-                    MessageStatus.sent.value,
-                    MessageStatus.queued.value,
-                ]),
+                OutreachMessage.status.in_(
+                    [
+                        MessageStatus.sent.value,
+                        MessageStatus.queued.value,
+                    ]
+                ),
                 OutreachMessage.sent_at >= one_hour_ago,
             )
             .scalar()
@@ -84,11 +91,16 @@ def can_send_message(message: OutreachMessage) -> tuple[bool, str]:
     try:
         lead = db.query(Lead).filter(Lead.id == message.lead_id).first()
         if lead and lead.do_not_contact:
-            return False, f"Lead is do_not_contact: {lead.do_not_contact_reason or 'no reason'}"
+            return (
+                False,
+                f"Lead is do_not_contact: {lead.do_not_contact_reason or 'no reason'}",
+            )
 
-        campaign = db.query(OutreachCampaign).filter(
-            OutreachCampaign.id == message.campaign_id
-        ).first()
+        campaign = (
+            db.query(OutreachCampaign)
+            .filter(OutreachCampaign.id == message.campaign_id)
+            .first()
+        )
         if campaign and campaign.status in (
             CampaignStatus.paused.value,
             CampaignStatus.cancelled.value,
@@ -112,17 +124,19 @@ def get_follow_up_candidates() -> list[OutreachMessage]:
 
     db = SessionLocal()
     try:
-        delay_threshold = datetime.now(timezone.utc) - timedelta(
+        delay_threshold = datetime.now(UTC) - timedelta(
             hours=settings.follow_up_delay_hours
         )
 
         candidates = (
             db.query(OutreachMessage)
             .filter(
-                OutreachMessage.status.in_([
-                    MessageStatus.sent.value,
-                    MessageStatus.delivered.value,
-                ]),
+                OutreachMessage.status.in_(
+                    [
+                        MessageStatus.sent.value,
+                        MessageStatus.delivered.value,
+                    ]
+                ),
                 OutreachMessage.follow_up_number < settings.follow_up_max_count,
                 OutreachMessage.sent_at <= delay_threshold,
                 OutreachMessage.replied_at.is_(None),
@@ -161,11 +175,13 @@ def cancel_pending_follow_ups(db, lead_id: int) -> int:
         db.query(OutreachMessage)
         .filter(
             OutreachMessage.lead_id == lead_id,
-            OutreachMessage.status.in_([
-                MessageStatus.needs_review.value,
-                MessageStatus.approved.value,
-                MessageStatus.queued.value,
-            ]),
+            OutreachMessage.status.in_(
+                [
+                    MessageStatus.needs_review.value,
+                    MessageStatus.approved.value,
+                    MessageStatus.queued.value,
+                ]
+            ),
         )
         .all()
     )
@@ -189,18 +205,24 @@ def get_outreach_metrics() -> dict:
             )
             status_counts[status.value] = count or 0
 
-        total_sent = status_counts.get("sent", 0) + status_counts.get("delivered", 0) + status_counts.get("read", 0)
+        total_sent = (
+            status_counts.get("sent", 0)
+            + status_counts.get("delivered", 0)
+            + status_counts.get("read", 0)
+        )
         replied = status_counts.get("replied", 0)
         reply_rate = (replied / total_sent * 100) if total_sent > 0 else 0.0
 
         stage_counts = {}
         from app.models.lead import Lead
+
         leads = db.query(Lead).all()
         for lead in leads:
             stage_counts[lead.stage] = stage_counts.get(lead.stage, 0) + 1
 
         return {
-            "draft_count": status_counts.get("draft", 0) + status_counts.get("needs_review", 0),
+            "draft_count": status_counts.get("draft", 0)
+            + status_counts.get("needs_review", 0),
             "approved_count": status_counts.get("approved", 0),
             "sent_count": total_sent,
             "delivered_count": status_counts.get("delivered", 0),

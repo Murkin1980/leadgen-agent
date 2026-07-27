@@ -1,13 +1,12 @@
 """Backup and restore: PostgreSQL dump, sites archive, manifest with checksums."""
+
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import tarfile
-import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.config import settings
@@ -36,7 +35,7 @@ def create_backup(output_dir: str | Path) -> dict:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     revision = _get_alembic_revision()
 
     manifest: dict = {
@@ -65,7 +64,9 @@ def create_backup(output_dir: str | Path) -> dict:
         }
 
     manifest_path = output_dir / f"manifest_{timestamp}.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     manifest["files"]["manifest"] = {
         "path": manifest_path.name,
         "sha256": _hash_file(manifest_path),
@@ -99,14 +100,16 @@ def verify_backup(backup_dir: str | Path) -> tuple[bool, list[str]]:
         if key not in manifest:
             errors.append(f"Missing key in manifest: {key}")
 
-    for file_key, file_info in manifest.get("files", {}).items():
+    for file_info in manifest.get("files", {}).values():
         file_path = backup_dir / file_info["path"]
         if not file_path.exists():
             errors.append(f"File referenced in manifest not found: {file_info['path']}")
             continue
         actual_hash = _hash_file(file_path)
         if actual_hash != file_info["sha256"]:
-            errors.append(f"Checksum mismatch for {file_info['path']}: expected {file_info['sha256']}, got {actual_hash}")
+            errors.append(
+                f"Checksum mismatch for {file_info['path']}: expected {file_info['sha256']}, got {actual_hash}"
+            )
 
     return len(errors) == 0, errors
 
@@ -136,12 +139,16 @@ def restore_database(backup_dir: str | Path, target_database_url: str) -> dict:
             capture_output=True,
             text=True,
             timeout=300,
+            check=False,  # returncode is inspected explicitly below
         )
         if result.returncode != 0:
             return {"success": False, "message": f"psql failed: {result.stderr[:500]}"}
         return {"success": True, "message": "Database restored successfully"}
     except FileNotFoundError:
-        return {"success": False, "message": "psql not found — install postgresql-client"}
+        return {
+            "success": False,
+            "message": "psql not found — install postgresql-client",
+        }
     except subprocess.TimeoutExpired:
         return {"success": False, "message": "Restore timed out"}
 
@@ -155,6 +162,7 @@ def _run_pg_dump(output_path: Path) -> None:
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,  # returncode is inspected explicitly below
         )
         if result.returncode != 0:
             logger.warning("pg_dump failed: %s", result.stderr[:300])
@@ -179,6 +187,7 @@ def _get_alembic_revision() -> str | None:
     try:
         from alembic.config import Config
         from alembic.script import ScriptDirectory
+
         config = Config("alembic.ini")
         script = ScriptDirectory.from_config(config)
         heads = script.get_heads()

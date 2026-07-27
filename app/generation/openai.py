@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 
 from app.config import settings
@@ -35,24 +34,27 @@ class OpenAITextGenerationAdapter:
 
         system_prompt = self._load_prompt("system_v1.txt")
         user_prompt = self._load_prompt("landing_profile_v1.txt")
-        user_prompt = user_prompt.replace("{{CONTEXT_JSON}}", json.dumps(
-            {
-                "company_name": context.company_name,
-                "city": context.city,
-                "category": context.category,
-                "phone": context.phone,
-                "whatsapp_url": context.whatsapp_url,
-                "social_links": context.social_links,
-                "rating": context.rating,
-                "reviews_count": context.reviews_count,
-                "address": context.address,
-                "services": context.services,
-                "language": context.language,
-                "notes": context.notes,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ))
+        user_prompt = user_prompt.replace(
+            "{{CONTEXT_JSON}}",
+            json.dumps(
+                {
+                    "company_name": context.company_name,
+                    "city": context.city,
+                    "category": context.category,
+                    "phone": context.phone,
+                    "whatsapp_url": context.whatsapp_url,
+                    "social_links": context.social_links,
+                    "rating": context.rating,
+                    "reviews_count": context.reviews_count,
+                    "address": context.address,
+                    "services": context.services,
+                    "language": context.language,
+                    "notes": context.notes,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
 
         start = time.time()
         response = client.chat.completions.create(

@@ -55,7 +55,9 @@ class CsvCollectorAdapter:
 
         source_id = row.get("source_id", "")
         if not source_id:
-            source_id = hashlib.md5(f"{name}:{row.get('city', '')}".encode()).hexdigest()[:12]
+            source_id = hashlib.md5(
+                f"{name}:{row.get('city', '')}".encode()
+            ).hexdigest()[:12]
 
         return CollectedCompany(
             source_id=source_id,
@@ -80,7 +82,9 @@ class CsvCollectorAdapter:
         category: str,
         limit: int,
     ) -> list[CollectedCompany]:
-        return self.search_page(city=city, category=category, page=1, page_size=limit).items
+        return self.search_page(
+            city=city, category=category, page=1, page_size=limit
+        ).items
 
     def search_page(
         self,
@@ -91,9 +95,10 @@ class CsvCollectorAdapter:
         page_size: int = 20,
     ) -> CollectedPage:
         companies = self._load_companies()
-        
+
         filtered = [
-            c for c in companies
+            c
+            for c in companies
             if (not city or c.city.lower() == city.lower())
             and (not category or c.category.lower() == category.lower())
         ]

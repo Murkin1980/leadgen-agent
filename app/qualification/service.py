@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QualificationResult:
     """Result of lead qualification scoring."""
+
     score: int
     reasons: list[str]
     qualified: bool
@@ -18,11 +19,15 @@ class QualificationResult:
     def to_json(self) -> str:
         """Serialize to JSON string for storage."""
         import json
-        return json.dumps({
-            "score": self.score,
-            "reasons": self.reasons,
-            "qualified": self.qualified,
-        }, ensure_ascii=False)
+
+        return json.dumps(
+            {
+                "score": self.score,
+                "reasons": self.reasons,
+                "qualified": self.qualified,
+            },
+            ensure_ascii=False,
+        )
 
 
 class LeadQualifier:
@@ -38,19 +43,31 @@ class LeadQualifier:
         score_reviews: int | None = None,
     ):
         self.min_score = min_score if min_score is not None else settings.lead_min_score
-        self.score_phone = score_phone if score_phone is not None else settings.lead_score_phone
-        self.score_website = score_website if score_website is not None else settings.lead_score_website
-        self.score_instagram = score_instagram if score_instagram is not None else settings.lead_score_instagram
-        self.score_rating = score_rating if score_rating is not None else settings.lead_score_rating
-        self.score_reviews = score_reviews if score_reviews is not None else settings.lead_score_reviews
+        self.score_phone = (
+            score_phone if score_phone is not None else settings.lead_score_phone
+        )
+        self.score_website = (
+            score_website if score_website is not None else settings.lead_score_website
+        )
+        self.score_instagram = (
+            score_instagram
+            if score_instagram is not None
+            else settings.lead_score_instagram
+        )
+        self.score_rating = (
+            score_rating if score_rating is not None else settings.lead_score_rating
+        )
+        self.score_reviews = (
+            score_reviews if score_reviews is not None else settings.lead_score_reviews
+        )
 
     def qualify(self, lead_data: dict) -> QualificationResult:
         """
         Qualify a lead based on its data.
-        
+
         Args:
             lead_data: Dict with lead fields (phone, website, instagram, rating, reviews_count, etc.)
-            
+
         Returns:
             QualificationResult with score, reasons, and qualified status
         """

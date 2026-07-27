@@ -1,12 +1,12 @@
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models.campaign import OutreachMessage, MessageStatus
+from app.models.campaign import MessageStatus, OutreachMessage
 from app.models.event import OutreachEvent
 from app.models.lead import Lead
 from app.models.stage import LeadStage
@@ -74,7 +74,7 @@ def process_webhook_event(
         new_status = _STATUS_MAP.get(event_type)
         if new_status and _is_monotonic(msg.status, new_status):
             msg.status = new_status
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if new_status == MessageStatus.delivered.value:
                 msg.delivered_at = now
             elif new_status == MessageStatus.read.value:

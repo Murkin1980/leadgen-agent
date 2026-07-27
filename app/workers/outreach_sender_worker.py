@@ -1,14 +1,14 @@
 import logging
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from rq import Queue
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models.campaign import MessageStatus, OutreachCampaign, OutreachMessage
+from app.models.campaign import MessageStatus, OutreachMessage
 from app.models.event import OutreachEvent
 from app.models.lead import ConsentStatus, Lead
 from app.models.stage import LeadStage
@@ -32,7 +32,10 @@ def _production_policy_allows(lead: Lead, recipient: str) -> tuple[bool, str | N
         normalized = PhoneNumberService.normalize(recipient)
     except PhoneNumberError as exc:
         return False, str(exc)
-    if settings.outreach_mode == "sandbox" and normalized not in settings.sandbox_allowlist:
+    if (
+        settings.outreach_mode == "sandbox"
+        and normalized not in settings.sandbox_allowlist
+    ):
         return False, "Recipient is not in sandbox allowlist"
     if lead.do_not_contact:
         return False, "Lead is do-not-contact"
@@ -40,7 +43,10 @@ def _production_policy_allows(lead: Lead, recipient: str) -> tuple[bool, str | N
         ConsentStatus.consented.value,
         ConsentStatus.legitimate_interest_reviewed.value,
     }
-    if settings.outreach_mode == "production" and lead.consent_status not in allowed_consents:
+    if (
+        settings.outreach_mode == "production"
+        and lead.consent_status not in allowed_consents
+    ):
         return False, "Contact basis is not approved"
     return True, None
 
@@ -52,10 +58,12 @@ def _schedule_retry(msg: OutreachMessage, error: str) -> None:
         msg.status = MessageStatus.dead_letter.value
         msg.error_message = error[:2000]
         return
-    delay = settings.outreach_send_retry_base_seconds * (2 ** max(0, msg.attempt_count - 1))
+    delay = settings.outreach_send_retry_base_seconds * (
+        2 ** max(0, msg.attempt_count - 1)
+    )
     delay += random.randint(0, max(1, delay // 5))
     msg.status = MessageStatus.retrying.value
-    msg.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+    msg.next_retry_at = datetime.now(UTC) + timedelta(seconds=delay)
     msg.error_message = error[:2000]
     Queue("outreach_send", connection=redis_conn).enqueue_in(
         timedelta(seconds=delay),
@@ -68,11 +76,22 @@ def _schedule_retry(msg: OutreachMessage, error: str) -> None:
 def run_outreach_sender(message_id: str) -> None:
     db: Session = SessionLocal()
     try:
-        msg = db.query(OutreachMessage).filter(OutreachMessage.id == message_id).with_for_update().first()
+        msg = (
+            db.query(OutreachMessage)
+            .filter(OutreachMessage.id == message_id)
+            .with_for_update()
+            .first()
+        )
         if not msg:
             logger.error("Message %s not found", message_id)
             return
-        if msg.status in {MessageStatus.sent.value, MessageStatus.delivered.value, MessageStatus.read.value, MessageStatus.replied.value, MessageStatus.cancelled.value}:
+        if msg.status in {
+            MessageStatus.sent.value,
+            MessageStatus.delivered.value,
+            MessageStatus.read.value,
+            MessageStatus.replied.value,
+            MessageStatus.cancelled.value,
+        }:
             return
 
         allowed, reason = can_send_message(msg)
@@ -85,7 +104,9 @@ def run_outreach_sender(message_id: str) -> None:
             msg.status = MessageStatus.blocked.value
             msg.retryable = False
             msg.error_message = reason
-            log_audit_event(db, "message_blocked", "outreach_message", message_id, actor="system")
+            log_audit_event(
+                db, "message_blocked", "outreach_message", message_id, actor="system"
+            )
             db.commit()
             return
 
@@ -95,7 +116,7 @@ def run_outreach_sender(message_id: str) -> None:
         db.commit()
 
         provider = create_outreach_provider()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = provider.send(
             recipient=msg.recipient,
             body=msg.body,
@@ -112,29 +133,41 @@ def run_outreach_sender(message_id: str) -> None:
             msg.provider_message_id = result.provider_message_id
             msg.retryable = False
             msg.next_retry_at = None
-            db.add(OutreachEvent(
-                id=str(uuid.uuid4())[:50],
-                message_id=message_id,
-                event_type="sent",
-                provider_event_id=result.provider_message_id,
-                payload_json=str(result.raw_response),
-            ))
+            db.add(
+                OutreachEvent(
+                    id=str(uuid.uuid4())[:50],
+                    message_id=message_id,
+                    event_type="sent",
+                    provider_event_id=result.provider_message_id,
+                    payload_json=str(result.raw_response),
+                )
+            )
             lead.last_contacted_at = now
             lead.last_outbound_at = now
             if lead.stage == LeadStage.ready_for_outreach.value:
                 lead.stage = LeadStage.contacted.value
-            log_audit_event(db, "message_sent", "outreach_message", message_id, actor="system")
+            log_audit_event(
+                db, "message_sent", "outreach_message", message_id, actor="system"
+            )
         elif result.retryable:
             # attempt_count was already incremented before the API call
             msg.attempt_count -= 1
             _schedule_retry(msg, result.error_message or "Temporary send failure")
-            log_audit_event(db, "message_retry_scheduled", "outreach_message", message_id, actor="system")
+            log_audit_event(
+                db,
+                "message_retry_scheduled",
+                "outreach_message",
+                message_id,
+                actor="system",
+            )
         else:
             msg.status = MessageStatus.failed.value
             msg.failed_at = now
             msg.retryable = False
             msg.error_message = result.error_message or "Send failed"
-            log_audit_event(db, "message_failed", "outreach_message", message_id, actor="system")
+            log_audit_event(
+                db, "message_failed", "outreach_message", message_id, actor="system"
+            )
         db.commit()
 
     except Exception as exc:
@@ -151,10 +184,14 @@ def run_outreach_sender(message_id: str) -> None:
 def run_outreach_sender_batch(campaign_id: str) -> int:
     db = SessionLocal()
     try:
-        messages = db.query(OutreachMessage).filter(
-            OutreachMessage.campaign_id == campaign_id,
-            OutreachMessage.status == MessageStatus.approved.value,
-        ).all()
+        messages = (
+            db.query(OutreachMessage)
+            .filter(
+                OutreachMessage.campaign_id == campaign_id,
+                OutreachMessage.status == MessageStatus.approved.value,
+            )
+            .all()
+        )
         for msg in messages:
             run_outreach_sender(msg.id)
         return len(messages)

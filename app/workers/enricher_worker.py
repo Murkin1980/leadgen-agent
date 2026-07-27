@@ -1,11 +1,9 @@
-from datetime import datetime, timezone
-
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.enrichment.enricher import enrich_lead
 from app.models.lead import Lead, LeadStatus
-from app.models.search_job import SearchJob, JobStatus
+from app.models.search_job import JobStatus, SearchJob
 
 
 def run_enricher(lead_ids: list[int], job_id: int) -> None:

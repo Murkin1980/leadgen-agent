@@ -87,15 +87,23 @@ class Settings(BaseSettings):
 
     @property
     def sandbox_allowlist(self) -> set[str]:
-        return {item.strip() for item in self.outreach_sandbox_allowlist.split(",") if item.strip()}
+        return {
+            item.strip()
+            for item in self.outreach_sandbox_allowlist.split(",")
+            if item.strip()
+        }
 
     @model_validator(mode="after")
     def validate_openai_config(self) -> "Settings":
         if self.text_generator_provider == "openai":
             if not self.openai_api_key:
-                raise ValueError("OPENAI_API_KEY is required when TEXT_GENERATOR_PROVIDER=openai")
+                raise ValueError(
+                    "OPENAI_API_KEY is required when TEXT_GENERATOR_PROVIDER=openai"
+                )
             if not self.openai_model:
-                raise ValueError("OPENAI_MODEL is required when TEXT_GENERATOR_PROVIDER=openai")
+                raise ValueError(
+                    "OPENAI_MODEL is required when TEXT_GENERATOR_PROVIDER=openai"
+                )
         if self.openai_timeout_seconds <= 0:
             raise ValueError("OPENAI_TIMEOUT_SECONDS must be positive")
         if self.openai_max_retries < 0:
@@ -125,7 +133,9 @@ class Settings(BaseSettings):
             }
             missing = [name for name, value in required.items() if not value]
             if missing:
-                raise ValueError(f"Missing WhatsApp production settings: {', '.join(missing)}")
+                raise ValueError(
+                    f"Missing WhatsApp production settings: {', '.join(missing)}"
+                )
         return self
 
     class Config:

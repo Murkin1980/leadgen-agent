@@ -12,6 +12,7 @@ Tests the single business scenario:
 9. Receive mock inbound reply
 10. Verify lead stage updated to replied
 """
+
 from __future__ import annotations
 
 import os
@@ -28,17 +29,17 @@ os.environ["LEAD_MIN_SCORE"] = "0"
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.models.campaign import OutreachMessage, MessageStatus
+from app.models.campaign import MessageStatus, OutreachMessage
 from app.models.content_generation import ContentGeneration, ContentGenerationStatus
-from app.models.lead import Lead, LeadStatus, ConsentStatus
 from app.models.landing_page import LandingPage, LandingStatus, ReviewStatus
+from app.models.lead import Lead, LeadStatus
 from app.models.stage import LeadStage
 
 
@@ -94,11 +95,13 @@ class TestMVPFlow:
             prompt_version="v1",
             status=ContentGenerationStatus.succeeded.value,
             language="ru",
-            output_json=json.dumps({
-                "meta": {"title": "Test Restaurant - Landing"},
-                "hero": {"headline": "Лучшие блюда в Алматы"},
-                "sections": [],
-            }),
+            output_json=json.dumps(
+                {
+                    "meta": {"title": "Test Restaurant - Landing"},
+                    "hero": {"headline": "Лучшие блюда в Алматы"},
+                    "sections": [],
+                }
+            ),
         )
         db.add(gen)
 
@@ -133,7 +136,7 @@ class TestMVPFlow:
         landing = db.query(LandingPage).filter(LandingPage.id == "lp_mvp_001").first()
         landing.review_status = ReviewStatus.approved.value
         landing.status = LandingStatus.approved.value
-        landing.approved_at = datetime.now(timezone.utc)
+        landing.approved_at = datetime.now(UTC)
         landing.approved_by = "admin"
         db.commit()
         db.refresh(landing)
@@ -174,10 +177,14 @@ class TestMVPFlow:
 
     def test_07_approve_message(self, db):
         """Step 7: Admin approves the message."""
-        msg = db.query(OutreachMessage).filter(OutreachMessage.id == "msg_mvp_001").first()
+        msg = (
+            db.query(OutreachMessage)
+            .filter(OutreachMessage.id == "msg_mvp_001")
+            .first()
+        )
         msg.status = MessageStatus.approved.value
         msg.approved_by = "admin"
-        msg.approved_at = datetime.now(timezone.utc)
+        msg.approved_at = datetime.now(UTC)
         db.commit()
         db.refresh(msg)
 
@@ -185,9 +192,13 @@ class TestMVPFlow:
 
     def test_08_send_via_mock_provider(self, db):
         """Step 8: Send via mock provider (simulates delivery)."""
-        msg = db.query(OutreachMessage).filter(OutreachMessage.id == "msg_mvp_001").first()
+        msg = (
+            db.query(OutreachMessage)
+            .filter(OutreachMessage.id == "msg_mvp_001")
+            .first()
+        )
         msg.status = MessageStatus.sent.value
-        msg.sent_at = datetime.now(timezone.utc)
+        msg.sent_at = datetime.now(UTC)
         msg.provider_message_id = f"mock_{uuid.uuid4().hex[:8]}"
         db.commit()
 
@@ -214,7 +225,7 @@ class TestMVPFlow:
         db.add(inbound)
 
         lead = db.query(Lead).filter(Lead.id == 1).first()
-        lead.last_inbound_at = datetime.now(timezone.utc)
+        lead.last_inbound_at = datetime.now(UTC)
         db.commit()
 
     def test_10_verify_lead_replied(self, db):
@@ -229,7 +240,10 @@ class TestMVPFlow:
     def test_11_verify_inbound_recorded(self, db):
         """Verify inbound message was recorded."""
         from app.models.whatsapp import InboundMessage
-        inbound = db.query(InboundMessage).filter(InboundMessage.id == "inb_mvp_001").first()
+
+        inbound = (
+            db.query(InboundMessage).filter(InboundMessage.id == "inb_mvp_001").first()
+        )
         assert inbound is not None
         assert inbound.text_body == "Спасибо! Интересно, расскажите подробнее."
 
@@ -240,8 +254,14 @@ class TestMVPSimplifiedStages:
     def test_mvp_stages_are_subset(self):
         """MVP working stages should be a subset of all stages."""
         MVP_STAGES = {
-            "new", "landing_ready", "message_approved",
-            "contacted", "replied", "interested", "won", "lost",
+            "new",
+            "landing_ready",
+            "message_approved",
+            "contacted",
+            "replied",
+            "interested",
+            "won",
+            "lost",
             "do_not_contact",
         }
         all_stages = {s.value for s in LeadStage}
@@ -257,21 +277,25 @@ class TestMVPEnterpriseModulesHidden:
     """Verify enterprise-only modules don't break MVP import."""
 
     def test_import_metrics(self):
-        from app.metrics import metrics_router, metrics_text
+        from app.metrics import metrics_text
+
         text = metrics_text()
         assert "leadgen_" in text
 
     def test_import_pilot(self):
-        from app.pilot import is_pilot_mode, pilot_status
+        from app.pilot import is_pilot_mode
+
         assert not is_pilot_mode()
 
     def test_import_api_keys(self):
         from app.api_keys import generate_api_key
+
         key, key_hash = generate_api_key()
         assert key.startswith("lg_")
         assert len(key_hash) == 64
 
     def test_import_retention(self):
         from app.retention import get_retention_config
+
         config = get_retention_config()
         assert "lead_retention_days" in config

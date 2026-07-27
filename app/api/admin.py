@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 import secrets
-from pathlib import Path
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -10,18 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.campaign import OutreachMessage, MessageStatus
-from app.models.content_generation import ContentGeneration
+from app.models.campaign import MessageStatus, OutreachMessage
 from app.models.landing_page import (
-    ChangeSource,
     LandingPage,
-    LandingPageVersion,
     LandingStatus,
     ReviewStatus,
 )
 from app.models.lead import Lead
-from app.models.whatsapp import InboundMessage, InboundMessageStatus
-from app.security import generate_csrf_token, validate_csrf_token, log_audit_event
+from app.models.whatsapp import InboundMessage
+from app.security import generate_csrf_token, log_audit_event, validate_csrf_token
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -83,6 +79,7 @@ def do_login(password: str = Form(...), response: Response = None):
 
 # ── 1. Leads ─────────────────────────────────────────────────────
 
+
 @admin_router.get("/leads", response_class=HTMLResponse)
 def admin_leads(request: Request, db: Session = Depends(get_db)):
     _require_auth(request)
@@ -112,9 +109,13 @@ def admin_lead_detail(lead_id: int, request: Request, db: Session = Depends(get_
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     from app.models.stage import LeadStageHistory
-    history = db.query(LeadStageHistory).filter(
-        LeadStageHistory.lead_id == lead_id
-    ).order_by(LeadStageHistory.created_at.desc()).all()
+
+    history = (
+        db.query(LeadStageHistory)
+        .filter(LeadStageHistory.lead_id == lead_id)
+        .order_by(LeadStageHistory.created_at.desc())
+        .all()
+    )
     history_html = ""
     for h in history:
         history_html += f"<li>{h.from_stage} → {h.to_stage} by {h.changed_by or 'system'} — {h.reason or ''}</li>"
@@ -128,18 +129,21 @@ def admin_lead_detail(lead_id: int, request: Request, db: Session = Depends(get_
 <div class="box">
 <p><b>ID:</b> {lead.id} | <b>City:</b> {lead.city} | <b>Phone:</b> {lead.phone}</p>
 <p><b>Stage:</b> {lead.stage} | <b>Status:</b> {lead.status} | <b>Score:</b> {lead.qualification_score}</p>
-<p><b>Do Not Contact:</b> {dnc} {f'({lead.do_not_contact_reason})' if lead.do_not_contact_reason else ''}</p>
+<p><b>Do Not Contact:</b> {dnc} {f"({lead.do_not_contact_reason})" if lead.do_not_contact_reason else ""}</p>
 </div>
 <h3>Stage History</h3>
-<ul>{history_html or '<li>No history</li>'}</ul>
+<ul>{history_html or "<li>No history</li>"}</ul>
 </body></html>"""
     return HTMLResponse(content=html)
 
 
 # ── 2. Landings on Review ───────────────────────────────────────
 
+
 @admin_router.get("/landings", response_class=HTMLResponse)
-def admin_landings(request: Request, lead_id: int | None = None, db: Session = Depends(get_db)):
+def admin_landings(
+    request: Request, lead_id: int | None = None, db: Session = Depends(get_db)
+):
     _require_auth(request)
     q = db.query(LandingPage).order_by(LandingPage.created_at.desc())
     if lead_id:
@@ -172,7 +176,9 @@ th{{background:#1f2937;color:#fff}}a{{color:#2563eb}}</style></head><body>
 
 
 @admin_router.get("/landings/{landing_id}", response_class=HTMLResponse)
-def admin_landing_detail(landing_id: str, request: Request, db: Session = Depends(get_db)):
+def admin_landing_detail(
+    landing_id: str, request: Request, db: Session = Depends(get_db)
+):
     _require_auth(request)
     lp = db.query(LandingPage).filter(LandingPage.id == landing_id).first()
     if not lp:
@@ -225,8 +231,9 @@ def admin_approve_landing(
         raise HTTPException(status_code=404, detail="Landing not found")
     lp.review_status = ReviewStatus.approved.value
     lp.status = LandingStatus.approved.value
-    from datetime import datetime, timezone
-    lp.approved_at = datetime.now(timezone.utc)
+    from datetime import datetime
+
+    lp.approved_at = datetime.now(UTC)
     lp.approved_by = settings.admin_username
     db.commit()
     return RedirectResponse(url=f"/admin/landings/{landing_id}", status_code=302)
@@ -254,6 +261,7 @@ def admin_reject_landing(
 
 # ── 3. Messages on Approval ────────────────────────────────────
 
+
 @admin_router.get("/messages", response_class=HTMLResponse)
 def admin_messages(request: Request, db: Session = Depends(get_db)):
     _require_auth(request)
@@ -270,7 +278,7 @@ def admin_messages(request: Request, db: Session = Depends(get_db)):
         body_preview = body_preview.replace("<", "&lt;")
         actions = ""
         if m.status == "needs_review":
-            actions = f'''<a href="/admin/messages/{m.id}/approve?csrf_token={csrf}" style="color:#16a34a">approve</a>'''
+            actions = f"""<a href="/admin/messages/{m.id}/approve?csrf_token={csrf}" style="color:#16a34a">approve</a>"""
         rows += f"""<tr>
 <td>{m.id}</td><td>{m.lead_id}</td><td>{m.channel}</td>
 <td style="max-width:300px"><pre style="margin:0;font-size:12px">{body_preview}</pre></td>
@@ -303,9 +311,12 @@ def admin_approve_message_link(
         raise HTTPException(status_code=404, detail="Message not found")
     msg.status = MessageStatus.approved.value
     msg.approved_by = settings.admin_username
-    from datetime import datetime, timezone
-    msg.approved_at = datetime.now(timezone.utc)
-    log_audit_event(db, "message_approved", "outreach_message", message_id, actor="admin")
+    from datetime import datetime
+
+    msg.approved_at = datetime.now(UTC)
+    log_audit_event(
+        db, "message_approved", "outreach_message", message_id, actor="admin"
+    )
     db.commit()
     return RedirectResponse(url="/admin/messages", status_code=302)
 
@@ -324,14 +335,18 @@ def admin_approve_message(
         raise HTTPException(status_code=404, detail="Message not found")
     msg.status = MessageStatus.approved.value
     msg.approved_by = settings.admin_username
-    from datetime import datetime, timezone
-    msg.approved_at = datetime.now(timezone.utc)
-    log_audit_event(db, "message_approved", "outreach_message", message_id, actor="admin")
+    from datetime import datetime
+
+    msg.approved_at = datetime.now(UTC)
+    log_audit_event(
+        db, "message_approved", "outreach_message", message_id, actor="admin"
+    )
     db.commit()
     return RedirectResponse(url="/admin/messages", status_code=302)
 
 
 # ── 4. Inbox (Inbound Responses) ───────────────────────────────
+
 
 @admin_router.get("/inbox", response_class=HTMLResponse)
 def admin_inbox(request: Request, db: Session = Depends(get_db)):
@@ -344,9 +359,15 @@ def admin_inbox(request: Request, db: Session = Depends(get_db)):
     )
     rows = ""
     for im in inbounds:
-        lead = db.query(Lead).filter(Lead.id == im.lead_id).first() if im.lead_id else None
+        lead = (
+            db.query(Lead).filter(Lead.id == im.lead_id).first() if im.lead_id else None
+        )
         lead_name = lead.name if lead else "(unknown)"
-        text_preview = (im.text_body[:100] + "...") if im.text_body and len(im.text_body) > 100 else (im.text_body or "")
+        text_preview = (
+            (im.text_body[:100] + "...")
+            if im.text_body and len(im.text_body) > 100
+            else (im.text_body or "")
+        )
         text_preview = text_preview.replace("<", "&lt;")
         status_badge = im.status
         if im.status == "new":
@@ -369,6 +390,7 @@ th{{background:#1f2937;color:#fff}}a{{color:#2563eb}}</style></head><body>
 
 
 # ── 5. Settings (MVP) ─────────────────────────────────────────
+
 
 @admin_router.get("/settings", response_class=HTMLResponse)
 def admin_settings(request: Request):

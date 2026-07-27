@@ -1,4 +1,5 @@
-import pytest
+from datetime import UTC
+
 from app.generation.usage import UsageTracker
 
 
@@ -30,10 +31,12 @@ class TestUsageTracker:
         assert tracker.check_daily_budget() is True
 
     def test_check_daily_budget_exceeded(self):
-        from datetime import date
+        from datetime import datetime
+
         from app.config import settings
+
         tracker = UsageTracker()
-        tracker._daily_date = date.today()
+        tracker._daily_date = datetime.now(UTC).date()
         tracker._daily_cost = settings.openai_daily_budget_usd + 1.0
         assert tracker.check_daily_budget() is False
 

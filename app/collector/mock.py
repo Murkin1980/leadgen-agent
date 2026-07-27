@@ -102,7 +102,9 @@ class MockCollectorAdapter:
         category: str,
         limit: int,
     ) -> list[CollectedCompany]:
-        return self.search_page(city=city, category=category, page=1, page_size=limit).items
+        return self.search_page(
+            city=city, category=category, page=1, page_size=limit
+        ).items
 
     def search_page(
         self,

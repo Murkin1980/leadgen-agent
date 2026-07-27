@@ -19,8 +19,6 @@ the worker's precondition check, which is exactly why this shipped.
 import uuid
 from unittest.mock import patch
 
-import pytest
-
 from app.models.campaign import MessageStatus, OutreachCampaign, OutreachMessage
 from app.models.lead import Lead, LeadStatus
 from app.outreach.service import can_send_message
@@ -83,8 +81,12 @@ class TestSendEndpointWorkerHandoff:
         # before the worker ever looks at it.
         _, _, msg = _make_lead_campaign_message(db, MessageStatus.queued.value)
 
-        with patch("app.outreach.service.settings") as mock_service_settings, \
-             patch("app.workers.outreach_sender_worker.settings") as mock_worker_settings:
+        with (
+            patch("app.outreach.service.settings") as mock_service_settings,
+            patch(
+                "app.workers.outreach_sender_worker.settings"
+            ) as mock_worker_settings,
+        ):
             self._patched_settings(mock_service_settings)
             self._patched_settings(mock_worker_settings)
             run_outreach_sender(msg.id)
@@ -96,8 +98,12 @@ class TestSendEndpointWorkerHandoff:
     def test_retrying_message_can_still_be_sent(self, db):
         _, _, msg = _make_lead_campaign_message(db, MessageStatus.retrying.value)
 
-        with patch("app.outreach.service.settings") as mock_service_settings, \
-             patch("app.workers.outreach_sender_worker.settings") as mock_worker_settings:
+        with (
+            patch("app.outreach.service.settings") as mock_service_settings,
+            patch(
+                "app.workers.outreach_sender_worker.settings"
+            ) as mock_worker_settings,
+        ):
             self._patched_settings(mock_service_settings)
             self._patched_settings(mock_worker_settings)
             run_outreach_sender(msg.id)
