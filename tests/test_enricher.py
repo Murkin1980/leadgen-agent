@@ -60,6 +60,28 @@ class TestSlug:
         slug = make_slug("A", "B")
         assert len(slug) >= 3
 
+    def test_cyrillic_name_is_transliterated_not_dropped(self):
+        # Regression test: fully Cyrillic name/city used to fall through to
+        # the "company" placeholder because SLUG_RE only accepts ASCII and
+        # nothing transliterated the Cyrillic characters first. That made
+        # every Cyrillic-named lead (i.e. almost all real leads) collapse to
+        # the same slug and overwrite each other's published landing page.
+        slug = make_slug("Дерево Мастер", "Алматы")
+        assert slug != "company"
+        assert "derevo" in slug
+        assert "master" in slug
+        assert "almaty" in slug
+
+    def test_two_cyrillic_leads_get_different_slugs(self):
+        slug_a = make_slug("Дерево Мастер", "Алматы", unique_id=3)
+        slug_b = make_slug("Шкаф Мастер", "Алматы", unique_id=2)
+        assert slug_a != slug_b
+
+    def test_same_name_different_ids_are_unique(self):
+        slug_a = make_slug("Мебель Сити", "Алматы", unique_id=1)
+        slug_b = make_slug("Мебель Сити", "Алматы", unique_id=2)
+        assert slug_a != slug_b
+
 
 class TestSpecialization:
     def test_kitchen(self):
@@ -96,3 +118,15 @@ class TestEnrichLead:
         assert result["slug"]
         assert len(result["services"]) > 0
         assert len(result["advantages"]) > 0
+
+    def test_slug_includes_lead_id_for_uniqueness(self):
+        lead = Lead(
+            id=42,
+            name="Дерево Мастер",
+            city="Алматы",
+            category="Мебель на заказ",
+            phone="+77001112233",
+        )
+        result = enrich_lead(lead)
+        assert result["slug"].endswith("-42")
+        assert result["slug"] != "company"

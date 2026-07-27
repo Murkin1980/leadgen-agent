@@ -5,6 +5,7 @@ __pycache__/
 test.db
 test_debug.db
 test_mvp.db
+dev.db
 *.egg-info/
 dist/
 build/
