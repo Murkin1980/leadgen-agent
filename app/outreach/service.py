@@ -65,7 +65,19 @@ def can_send_message(message: OutreachMessage) -> tuple[bool, str]:
     if not settings.outreach_enabled:
         return False, "Outreach is disabled (OUTREACH_ENABLED=false)"
 
-    if message.status != MessageStatus.approved.value:
+    # The send endpoint moves a message to 'queued' before enqueuing the
+    # worker job (so concurrent send calls don't double-send), and the retry
+    # scheduler re-enqueues messages in 'retrying'. Both are legitimate
+    # states for the worker to find when it actually attempts the send;
+    # only 'approved' being accepted here meant every real send request
+    # was rejected with "must be 'approved'" the moment it reached the
+    # worker, because by then the endpoint had already set it to 'queued'.
+    sendable_statuses = {
+        MessageStatus.approved.value,
+        MessageStatus.queued.value,
+        MessageStatus.retrying.value,
+    }
+    if message.status not in sendable_statuses:
         return False, f"Message status is '{message.status}', must be 'approved'"
 
     db = SessionLocal()

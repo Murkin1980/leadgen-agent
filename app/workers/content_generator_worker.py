@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -53,8 +54,10 @@ def run_content_generator(generation_id: str) -> None:
                 pass
 
         context = GenerationContext.from_lead(lead, qualification_reasons=qual_reasons)
-        context.language = gen.language or "ru"
-        context.notes = gen.notes
+        # GenerationContext is a frozen dataclass; build a new instance
+        # instead of assigning to its fields (assignment raises
+        # dataclasses.FrozenInstanceError and crashes every generation).
+        context = replace(context, language=gen.language or "ru", notes=gen.notes)
 
         gen.input_snapshot_json = json.dumps(
             {
