@@ -182,14 +182,48 @@ def create_content_generation(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    # Idempotency guard: a lead already has a generation in flight. Letting
+    # a second request through would create a second ContentGeneration and
+    # a second LandingPage row sharing the same slug (slug is derived from
+    # the lead, not the generation) -- both could end up "published" in the
+    # DB while only one actually exists on disk, since publish_site() uses
+    # the slug as the directory name.
+    in_flight = (
+        db.query(ContentGeneration)
+        .filter(
+            ContentGeneration.lead_id == lead_id,
+            ContentGeneration.status.in_(
+                [ContentGenerationStatus.queued.value, ContentGenerationStatus.running.value]
+            ),
+        )
+        .first()
+    )
+    if in_flight:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Content generation {in_flight.id} is already in progress for this lead",
+        )
+
     provider = (payload.provider if payload else None) or settings.text_generator_provider
     language = (payload.language if payload else None) or settings.default_language
     notes = (payload.notes if payload else None) or None
 
     generation_id = str(uuid.uuid4())[:12]
+
+    # If the lead already has a landing page (e.g. this is a regeneration
+    # after a rejection, or a re-run), reuse it instead of letting the
+    # worker create a brand-new one with the same slug.
+    existing_landing = (
+        db.query(LandingPage)
+        .filter(LandingPage.lead_id == lead_id)
+        .order_by(LandingPage.created_at.desc())
+        .first()
+    )
+
     gen = ContentGeneration(
         id=generation_id,
         lead_id=lead_id,
+        landing_page_id=existing_landing.id if existing_landing else None,
         provider=provider,
         model=settings.openai_model if provider == "openai" else None,
         prompt_version="v1",
