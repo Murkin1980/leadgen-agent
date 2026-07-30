@@ -78,56 +78,63 @@ def run_collector(job_id: int, provider: str | None = None) -> None:
                 if not company.name or not company.name.strip():
                     continue
 
-                existing = (
-                    db.query(Lead)
-                    .filter(Lead.source == job.provider, Lead.source_id == company.source_id)
-                    .first()
-                )
-                if existing:
+                try:
+                    existing = (
+                        db.query(Lead)
+                        .filter(Lead.source == job.provider, Lead.source_id == company.source_id)
+                        .first()
+                    )
+                    if existing:
+                        accepted_count += 1
+                        continue
+
+                    website_check = "pending"
+                    if settings.verification_enabled and company.website:
+                        result = verify_website(company.website)
+                        website_check = result["status"]
+
+                    lead_data = {
+                        "phone": company.phone,
+                        "website": company.website,
+                        "instagram": company.instagram,
+                        "rating": company.rating,
+                        "reviews_count": company.reviews_count,
+                    }
+                    qual_result = qualify_lead(lead_data)
+
+                    lead = Lead(
+                        name=company.name,
+                        category=company.category,
+                        city=company.city,
+                        address=company.address,
+                        phone=company.phone,
+                        whatsapp=company.phone,
+                        website=company.website,
+                        instagram=company.instagram,
+                        source=job.provider,
+                        source_id=company.source_id,
+                        source_url=company.source_url,
+                        rating=company.rating,
+                        reviews_count=company.reviews_count,
+                        latitude=company.latitude,
+                        longitude=company.longitude,
+                        has_website=bool(company.website),
+                        provider=job.provider,
+                        website_check_status=website_check,
+                        qualification_score=qual_result.score,
+                        qualification_reasons=qual_result.to_json(),
+                        status=LeadStatus.collected.value,
+                        search_job_id=job_id,
+                    )
+                    db.add(lead)
+                    db.flush()
                     accepted_count += 1
-                    continue
-
-                website_check = "pending"
-                if settings.verification_enabled and company.website:
-                    result = verify_website(company.website)
-                    website_check = result["status"]
-
-                lead_data = {
-                    "phone": company.phone,
-                    "website": company.website,
-                    "instagram": company.instagram,
-                    "rating": company.rating,
-                    "reviews_count": company.reviews_count,
-                }
-                qual_result = qualify_lead(lead_data)
-
-                lead = Lead(
-                    name=company.name,
-                    category=company.category,
-                    city=company.city,
-                    address=company.address,
-                    phone=company.phone,
-                    whatsapp=company.phone,
-                    website=company.website,
-                    instagram=company.instagram,
-                    source=job.provider,
-                    source_id=company.source_id,
-                    source_url=company.source_url,
-                    rating=company.rating,
-                    reviews_count=company.reviews_count,
-                    latitude=company.latitude,
-                    longitude=company.longitude,
-                    has_website=bool(company.website),
-                    provider=job.provider,
-                    website_check_status=website_check,
-                    qualification_score=qual_result.score,
-                    qualification_reasons=qual_result.to_json(),
-                    status=LeadStatus.collected.value,
-                    search_job_id=job_id,
-                )
-                db.add(lead)
-                db.flush()
-                accepted_count += 1
+                except Exception:
+                    db.rollback()
+                    logger.exception(
+                        "Skipping company (source_id=%s) in job %d after processing error",
+                        getattr(company, "source_id", None), job_id,
+                    )
 
             job.processed_count += len(page_result.items)
             job.found_count = job.processed_count

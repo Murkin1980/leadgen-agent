@@ -50,42 +50,50 @@ def run_outreach_generator(campaign_id: str) -> None:
                 db.commit()
                 continue
 
-            landing = None
-            if lead.landings:
-                for lp in lead.landings:
-                    if lp.preview_url:
-                        landing = lp
-                        break
-                if not landing:
-                    landing = lead.landings[0]
+            try:
+                landing = None
+                if lead.landings:
+                    for lp in lead.landings:
+                        if lp.preview_url:
+                            landing = lp
+                            break
+                    if not landing:
+                        landing = lead.landings[0]
 
-            ctx = MessageContext(
-                company_name=lead.name,
-                city=lead.city or "",
-                category=lead.category or "",
-                preview_url=landing.preview_url if landing else "",
-                phone=lead.phone or "",
-                language=campaign.language or "ru",
-                follow_up_number=msg.follow_up_number,
-            )
+                ctx = MessageContext(
+                    company_name=lead.name,
+                    city=lead.city or "",
+                    category=lead.category or "",
+                    preview_url=landing.preview_url if landing else "",
+                    phone=lead.phone or "",
+                    language=campaign.language or "ru",
+                    follow_up_number=msg.follow_up_number,
+                )
 
-            generated = generate_messages(ctx)
+                generated = generate_messages(ctx)
 
-            if campaign.channel == "whatsapp":
-                msg.body = generated.whatsapp_short
-            elif campaign.channel == "email":
-                msg.subject = generated.email_subject
-                msg.body = generated.email_body
-            elif campaign.channel == "telegram":
-                msg.body = generated.telegram_body
-            elif msg.follow_up_number > 0:
-                msg.body = generated.follow_up
-            else:
-                msg.body = generated.first_contact
+                if campaign.channel == "whatsapp":
+                    msg.body = generated.whatsapp_short
+                elif campaign.channel == "email":
+                    msg.subject = generated.email_subject
+                    msg.body = generated.email_body
+                elif campaign.channel == "telegram":
+                    msg.body = generated.telegram_body
+                elif msg.follow_up_number > 0:
+                    msg.body = generated.follow_up
+                else:
+                    msg.body = generated.first_contact
 
-            msg.recipient = _get_recipient(lead, campaign.channel)
-            msg.status = MessageStatus.needs_review.value
-            db.commit()
+                msg.recipient = _get_recipient(lead, campaign.channel)
+                msg.status = MessageStatus.needs_review.value
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                msg = db.query(OutreachMessage).filter(OutreachMessage.id == msg.id).first()
+                if msg:
+                    msg.status = MessageStatus.blocked.value
+                    msg.error_message = str(exc)
+                    db.commit()
 
         campaign.status = CampaignStatus.ready.value
         campaign.completed_at = datetime.now(timezone.utc)

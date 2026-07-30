@@ -156,7 +156,14 @@ def run_outreach_sender_batch(campaign_id: str) -> int:
             OutreachMessage.status == MessageStatus.approved.value,
         ).all()
         for msg in messages:
-            run_outreach_sender(msg.id)
+            try:
+                run_outreach_sender(msg.id)
+            except Exception:
+                logger.exception(
+                    "run_outreach_sender raised for message %s in batch %s; "
+                    "continuing with remaining messages",
+                    msg.id, campaign_id,
+                )
         return len(messages)
     finally:
         db.close()
