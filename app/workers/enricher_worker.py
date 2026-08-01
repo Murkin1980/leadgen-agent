@@ -9,15 +9,14 @@ from app.models.search_job import SearchJob, JobStatus
 from app.security import log_audit_event
 
 
-def run_enricher(lead_ids: list[int], job_id: int) -> None:
+def run_enricher(lead_ids: list[int], job_id: int | None) -> None:
     db: Session = SessionLocal()
     try:
-        job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
-        if not job:
-            return
+        job = db.query(SearchJob).filter(SearchJob.id == job_id).first() if job_id else None
 
-        job.status = JobStatus.enriching.value
-        db.commit()
+        if job:
+            job.status = JobStatus.enriching.value
+            db.commit()
 
         enriched_ids: list[int] = []
         for lid in lead_ids:
@@ -48,11 +47,12 @@ def run_enricher(lead_ids: list[int], job_id: int) -> None:
                     )
                     db.commit()
 
-        job.status = JobStatus.generating.value
-        db.commit()
+        if job:
+            job.status = JobStatus.generating.value
+            db.commit()
 
     except Exception as exc:
-        job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
+        job = db.query(SearchJob).filter(SearchJob.id == job_id).first() if job_id else None
         if job:
             job.status = JobStatus.failed.value
             job.error_message = str(exc)

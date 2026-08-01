@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models.campaign import OutreachMessage, MessageStatus, OutreachCampaign, CampaignStatus
 from app.models.lead import Lead
+from app.outreach.phone import PhoneNumberError, PhoneNumberService
 
 logger = logging.getLogger(__name__)
 
@@ -151,8 +152,12 @@ def is_sandbox_allowed(recipient: str) -> bool:
     if mode == "disabled":
         return False
     if mode == "sandbox":
+        try:
+            normalized = PhoneNumberService.normalize(recipient)
+        except PhoneNumberError:
+            return False
         allowlist = settings.sandbox_allowlist
-        return recipient in allowlist
+        return normalized in allowlist
     return True
 
 

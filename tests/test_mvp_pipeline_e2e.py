@@ -25,6 +25,17 @@ and the /generate-messages, /outreach-messages/{id}/send API endpoints
 enqueue RQ jobs, but the worker functions used here don't need a live
 Redis connection on the success path (only the retry-scheduling path in
 run_outreach_sender does, and that's not exercised by a clean send).
+
+Note on the sandbox phone number used below: tests/conftest.py's `db`
+fixture does not wipe data between tests within a session (only once at
+session end), so Lead rows from many test files coexist in the same
+test.db. The WhatsApp webhook handler matches an inbound message to a
+lead by phone/whatsapp with `.first()` and no tiebreaker
+(app/api/whatsapp_routes.py), so if two leads across different test
+files shared a phone number, which one the webhook step resolves to
+would not be guaranteed. This file uses "+77000000002" (the second
+sandbox-allowlisted number in conftest.py) specifically because no
+other test file uses it, avoiding the collision rather than masking it.
 """
 
 import json
@@ -47,7 +58,7 @@ from app.workers.outreach_generator_worker import run_outreach_generator
 from app.workers.outreach_sender_worker import run_outreach_sender
 from app.workers.publisher_worker import run_publisher
 
-SANDBOX_PHONE = "+77000000001"  # matches conftest's OUTREACH_SANDBOX_ALLOWLIST
+SANDBOX_PHONE = "+77000000002"  # dedicated to this test file; see comment below
 
 
 @pytest.fixture

@@ -172,12 +172,14 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
 
 # --- Content Generations ---
 
-@router.post("/leads/{lead_id}/content-generations", response_model=ContentGenerationResponse)
-def create_content_generation(
+def _create_content_generation_record(
     lead_id: int,
-    payload: ContentGenerationCreate | None = None,
-    db: Session = Depends(get_db),
-):
+    payload: ContentGenerationCreate | None,
+    db: Session,
+) -> ContentGeneration:
+    """Create (or reuse) a ContentGeneration row for a lead. Pure DB
+    operation, no queueing -- callers decide how the actual generation
+    gets run (enqueued for the RQ worker, or run synchronously)."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -234,9 +236,19 @@ def create_content_generation(
     db.add(gen)
     db.commit()
     db.refresh(gen)
+    return gen
+
+
+@router.post("/leads/{lead_id}/content-generations", response_model=ContentGenerationResponse)
+def create_content_generation(
+    lead_id: int,
+    payload: ContentGenerationCreate | None = None,
+    db: Session = Depends(get_db),
+):
+    gen = _create_content_generation_record(lead_id, payload, db)
 
     q = Queue("generate_content", connection=redis_conn)
-    q.enqueue("app.workers.content_generator_worker.run_content_generator", generation_id)
+    q.enqueue("app.workers.content_generator_worker.run_content_generator", gen.id)
 
     return gen
 
@@ -444,9 +456,20 @@ def publish_landing(landing_id: str, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    html = render_landing(profile, landing.slug)
-    save_landing(landing.slug, html, profile)
-    preview_url = publish_site(landing.slug)
+    # Previously, an error here (filesystem full, permission error, etc.)
+    # was an unhandled exception: a raw 500 with no failed-state
+    # transition recorded anywhere, meaning there was nothing for an
+    # admin to see or retry -- the landing just silently stayed
+    # "approved" forever. Mirrors run_publisher's per-step handling.
+    try:
+        html = render_landing(profile, landing.slug)
+        save_landing(landing.slug, html, profile)
+        preview_url = publish_site(landing.slug)
+    except Exception as e:
+        landing.status = LandingStatus.failed.value
+        landing.review_note = f"Publish failed: {e}"
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Publish failed: {e}")
 
     landing.preview_url = preview_url
     landing.status = LandingStatus.published.value
