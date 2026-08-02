@@ -54,8 +54,6 @@ services:
     build: .
     env_file: .env
     command:
-      - python
-      - -m
       - rq
       - worker
       - --url
@@ -92,7 +90,7 @@ services:
     profiles: ["advanced"]
     build: .
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "collect"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "collect"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -106,7 +104,7 @@ services:
     profiles: ["advanced"]
     build: .
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "enrich"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "enrich"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -120,7 +118,7 @@ services:
     profiles: ["advanced"]
     build: .
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "generate"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "generate"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -134,7 +132,7 @@ services:
     profiles: ["advanced"]
     build: .
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "generate_content"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "generate_content"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -148,7 +146,7 @@ services:
     profiles: ["advanced"]
     build: .
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "publish"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "publish"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -164,7 +162,7 @@ services:
       context: .
       dockerfile: Dockerfile.deployer
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "deploy"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "deploy"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -178,7 +176,7 @@ services:
     profiles: ["advanced"]
     build: .
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "outreach_generate"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "outreach_generate"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -190,7 +188,7 @@ services:
     profiles: ["advanced"]
     build: .
     env_file: .env
-    command: ["python", "-m", "rq", "worker", "--url", "redis://redis:6379/0", "outreach_send"]
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "outreach_send"]
     depends_on:
       migrate:
         condition: service_completed_successfully
