@@ -31,6 +31,7 @@ workflow level is exactly what found them.
 ```
  app/api/admin.py                         | 261 ++++++++++++++++++++-
  app/api/routes.py                        |  75 +++++-
+ app/config.py                            |   1 +
  app/enrichment/enricher.py               |  33 ++-
  app/outreach/service.py                  |   7 +-
  app/workers/collector_worker.py          | 105 +++++----
@@ -156,7 +157,22 @@ In the order found, across all sections of required work:
     spinning up the actual containers. Fixed all 9 occurrences to use
     the `rq` CLI entry point directly.
 
-## 4. E2E scenario covered
+12. **`app/config.py` -- `.env.mvp.example` unusable outside Docker
+    (found while verifying `docker compose config` in a follow-up
+    session):** `Settings.Config` had no `extra` setting, so
+    pydantic-settings defaults to rejecting unknown keys found in
+    `.env`. `.env.mvp.example` -- the exact file the README's Quick
+    Start section says to `cp .env.mvp.example .env` -- includes
+    `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` (consumed only by
+    the `postgres` container itself, not by this Settings model).
+    Copying the template and running the app or test suite directly
+    (not via Docker) crashed immediately with a confusing
+    `pydantic_core.ValidationError: ... Extra inputs are not permitted`
+    instead of starting. Fixed with `extra = "ignore"`; verified 318/318
+    still passes with the literal, unedited `.env.mvp.example` present
+    as `.env`.
+
+
 
 `tests/test_mvp_pipeline_e2e.py` drives, through real application
 services and worker functions (not just checking a job was enqueued):
@@ -276,20 +292,44 @@ versus what was already correct:
 
 ## 9. Docker smoke result
 
-**Not run end-to-end against real Docker in this session.** This
-sandbox has no Docker daemon (`docker: not found`, confirmed directly).
-`scripts/smoke_mvp_pipeline.sh` (section 4.7) was written and reviewed
-against the actual `docker-compose.yml` service names, ports, and the
-same API endpoint sequence already proven to work in an earlier live
-manual session against this codebase (running the FastAPI app + a real
-Redis + real RQ worker process directly in the sandbox, without Docker).
-Writing the script did catch a real defect it was designed to catch --
-see item 11 in section 3 -- by inspection of `docker-compose.yml` rather
-than by an actual failed run, since no Docker was available to actually
-observe the crash-loop live. **Running
-`bash scripts/smoke_mvp_pipeline.sh` against real Docker is a required
+**Partially verified; full end-to-end run against real Docker still not
+completed.** A Docker daemon was installed and started directly in this
+sandbox in a follow-up session (`docker.io` + `docker-compose-v2` from
+the Ubuntu archive, both on the network allowlist) specifically to push
+this verification further than "no Docker available":
+
+- `docker compose config`: **PASSED.** The compose file parses and
+  resolves cleanly -- confirms the YAML fix in item 11 (section 3,
+  `python -m rq worker` -> `rq worker`) didn't introduce a syntax or
+  schema error, and that all service definitions, `depends_on`
+  conditions, and environment variable interpolation are valid.
+- `docker compose build`: **blocked by this sandbox's network policy**,
+  not by anything in this repository. Building requires pulling
+  `python:3.12-slim` from Docker Hub
+  (`registry-1.docker.io`), which this sandbox's egress proxy explicitly
+  denies (`403 Forbidden`, `x-deny-reason: host_not_allowed` -- confirmed
+  directly with `curl -I https://registry-1.docker.io/v2/`). Docker Hub
+  is not on the sandbox's allowed-domains list; only
+  `archive.ubuntu.com`/`security.ubuntu.com`-style Ubuntu package
+  mirrors are. This is an environment restriction, not a defect to fix
+  in the codebase.
+- `docker compose up` / `scripts/smoke_mvp_pipeline.sh` against real
+  containers: **not run**, blocked by the same image-pull restriction.
+
+As a substitute for what actual Docker couldn't verify, this session
+additionally installed a real PostgreSQL and confirmed the full
+migration chain and a live app run against it directly (see section 8)
+-- stronger evidence than the SQLite-only testing this repo's test
+suite otherwise relies on, though still not a substitute for the
+container-level checks the smoke script performs (image builds,
+`depends_on`/healthcheck wiring, the actual `worker` container process
+lifecycle).
+
+**Running `bash scripts/smoke_mvp_pipeline.sh` against a real Docker
+installation with unrestricted network access remains a required
 follow-up before this branch should be considered fully verified** --
-see section 12.
+see section 12. `docker compose config` passing is a meaningful signal
+but does not substitute for it.
 
 ## 10. Remaining known limitations
 
