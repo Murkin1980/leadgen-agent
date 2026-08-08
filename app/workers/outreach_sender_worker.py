@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models.campaign import MessageStatus, OutreachCampaign, OutreachMessage
+from app.models.campaign import CampaignStatus, MessageStatus, OutreachCampaign, OutreachMessage
 from app.models.event import OutreachEvent
 from app.models.lead import ConsentStatus, Lead
 from app.models.stage import LeadStage
@@ -19,6 +19,18 @@ from app.security import log_audit_event
 from app.workers.connection import redis_conn
 
 logger = logging.getLogger(__name__)
+
+
+TERMINAL_MESSAGE_STATUSES = {
+    MessageStatus.sent.value,
+    MessageStatus.delivered.value,
+    MessageStatus.read.value,
+    MessageStatus.replied.value,
+    MessageStatus.failed.value,
+    MessageStatus.dead_letter.value,
+    MessageStatus.cancelled.value,
+    MessageStatus.blocked.value,
+}
 
 
 def _service_window_active(lead: Lead, now: datetime) -> bool:
@@ -72,7 +84,7 @@ def run_outreach_sender(message_id: str) -> None:
         if not msg:
             logger.error("Message %s not found", message_id)
             return
-        if msg.status in {MessageStatus.sent.value, MessageStatus.delivered.value, MessageStatus.read.value, MessageStatus.replied.value, MessageStatus.cancelled.value}:
+        if msg.status in TERMINAL_MESSAGE_STATUSES:
             return
 
         allowed, reason = can_send_message(msg)
