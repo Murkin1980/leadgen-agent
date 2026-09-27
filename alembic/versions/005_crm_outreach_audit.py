@@ -73,11 +73,11 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
-    op.create_unique_constraint(
-        "uq_outreach_first_contact",
-        "outreach_messages",
-        ["lead_id", "channel", "campaign_id"],
-    )
+    with op.batch_alter_table("outreach_messages") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_outreach_first_contact",
+            ["lead_id", "channel", "campaign_id"],
+        )
 
     op.create_table(
         "outreach_events",
@@ -104,7 +104,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("audit_log")
     op.drop_table("outreach_events")
-    op.drop_constraint("uq_outreach_first_contact", "outreach_messages", type_="unique")
+    with op.batch_alter_table("outreach_messages") as batch_op:
+        batch_op.drop_constraint("uq_outreach_first_contact", type_="unique")
     op.drop_table("outreach_messages")
     op.drop_table("outreach_campaigns")
     op.drop_table("lead_stage_history")

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Migration chain verification script
-# Verifies that migrations 001-006 can be applied and rolled back correctly
+# Verifies that the complete Alembic chain can be applied and rolled back correctly
 
 set -Eeuo pipefail
 
@@ -43,8 +43,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Test upgrade chain 001 -> 006
-echo "=== Testing upgrade chain 001 -> 006 ==="
+# Test the complete migration chain through the single Alembic head.
+echo "=== Testing upgrade chain base -> head ==="
 alembic upgrade head
 echo "OK: All migrations applied successfully"
 echo
@@ -61,7 +61,7 @@ tables = [
     'search_jobs', 'leads', 'landing_pages', 'landing_page_versions',
     'content_generations', 'deployments', 'outreach_campaigns',
     'outreach_messages', 'lead_stage_history', 'outreach_events',
-    'audit_log', 'whatsapp_templates', 'inbound_messages'
+    'audit_log', 'whatsapp_templates', 'inbound_messages', 'api_keys'
 ]
 for t in tables:
     cursor.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name=?\", (t,))
@@ -103,17 +103,16 @@ print()
 print('All table checks passed!')
 "
 
-# Test downgrade 006 -> 005
+# Test one-step downgrade and re-upgrade from the current head.
 echo
-echo "=== Testing downgrade 006 -> 005 ==="
+echo "=== Testing downgrade head -> previous revision ==="
 alembic downgrade -1
-echo "OK: Downgraded to 005"
+echo "OK: Downgraded one revision"
 echo
 
-# Test upgrade 005 -> 006
-echo "=== Testing upgrade 005 -> 006 ==="
+echo "=== Testing re-upgrade to head ==="
 alembic upgrade head
-echo "OK: Re-upgraded to 006"
+echo "OK: Re-upgraded to head"
 echo
 
 # Final check

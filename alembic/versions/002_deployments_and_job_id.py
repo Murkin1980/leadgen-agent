@@ -15,10 +15,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "leads",
-        sa.Column("search_job_id", sa.Integer(), sa.ForeignKey("search_jobs.id"), nullable=True),
-    )
+    with op.batch_alter_table("leads") as batch_op:
+        batch_op.add_column(
+            sa.Column(
+                "search_job_id",
+                sa.Integer(),
+                sa.ForeignKey("search_jobs.id", name="leads_search_job_id_fkey"),
+                nullable=True,
+            )
+        )
     op.create_index("ix_leads_search_job_id", "leads", ["search_job_id"])
 
     op.create_table(
@@ -47,8 +52,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_deployments_status")
-    op.drop_index("ix_deployments_job_id")
+    op.drop_index("ix_deployments_status", table_name="deployments")
+    op.drop_index("ix_deployments_job_id", table_name="deployments")
     op.drop_table("deployments")
-    op.drop_index("ix_leads_search_job_id")
-    op.drop_column("leads", "search_job_id")
+    op.drop_index("ix_leads_search_job_id", table_name="leads")
+    with op.batch_alter_table("leads") as batch_op:
+        batch_op.drop_column("search_job_id")

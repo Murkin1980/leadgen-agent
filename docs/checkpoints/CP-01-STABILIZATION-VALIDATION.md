@@ -257,3 +257,173 @@ Each check found no tracked file/path. The existing retry/idempotency coverage i
 6. Docker and PostgreSQL are unavailable locally, so the top-level local runner, strict smoke, and PostgreSQL job remain BLOCKED.
 
 CP-01 stops here with **RESULT: BLOCKED**. PR #2 and PR #3 were not merged, no force-push was used, and CP-02 was not started.
+
+## CP-01R — Blocker Resolution
+
+Recorded: 2026-09-28
+
+**RESULT: BLOCKED** — the SQLite portability and Starlette dependency-audit blockers are resolved, and the canonical MVP path/regressions pass. Coverage remains below the unchanged 80% gate, repository-wide Ruff/format gates remain red on baseline debt, and real PostgreSQL/Docker validations remain externally unavailable. No PR was merged and CP-02 was not started.
+
+### Disposition summary
+
+| Blocker | CP-01R disposition | Evidence summary |
+|---|---|---|
+| MVP-only coverage at 80% | **REMAINS_BLOCKED** | 287 tests pass, but coverage is 59.82% (2,925/4,890 statements). The 979 missing statements in deferred/out-of-MVP modules leave a 79.98% ceiling if every other missing statement were covered; do not expand into broad legacy testing. |
+| Ruff / format policy | **REMAINS_BLOCKED** | CI gates all of `app tests`; 328 Ruff findings and 69 unformatted files remain. CP-01R changed no `app/` or `tests/` files; CP-01's master comparison found zero new findings, and the CP-01R changed-file comparison below also found none. No mass rewrite. |
+| SQLite migration portability | **RESOLVED** | Fresh full-chain, downgrade/re-upgrade, schema assertions, and revision-001-with-data upgrade pass. |
+| PostgreSQL runtime migration/integration | **EXTERNAL_BLOCKED** | No local PostgreSQL or Docker; loopback port 5432 refused the connection. PostgreSQL offline DDL generation passed but is not represented as a real database test. |
+| Starlette dependency CVEs | **RESOLVED** | FastAPI 0.133.1 + Starlette 1.3.1 are pinned; the requirements audit reports no known vulnerabilities; full, focused, and relevant security tests pass. |
+| Bandit / secret-scan baseline | **REMAINS_BLOCKED** | Bandit still reports the same 11 findings as master (1 HIGH, 10 LOW); the configured Python `trufflehog` CLI invocation does not perform a filesystem scan. Neither issue was introduced or changed in CP-01R. |
+| Docker local runner / strict smoke | **EXTERNAL_BLOCKED** | Docker is not installed; the local validation runner and strict smoke both stop at their Docker preflight. |
+| Canonical E2E and regression cases | **RESOLVED** | Full suite 287 passed; focused workflow/recovery/security suite 18 passed; webhook-signature/CSRF tests 10 passed. The worker E2E completes generation → landing approval → publish → message approval → send → inbound webhook → replied and verifies duplicate-webhook idempotency. |
+
+### 1. Coverage and configured gate
+
+**CI policy inspected:** `.github/workflows/ci.yml` runs `pytest tests/ -v --cov=app --cov-report=xml --cov-fail-under=80 --cov-config=.coveragerc`. Ruff and format run repository-wide over `app tests`. No `.coveragerc`, `pyproject.toml`, `setup.cfg`, `tox.ini`, or `pytest.ini` exists in this checkout; `.coveragerc` is referenced by CI but is absent. The equivalent CP-01R run with `--cov-config=.coveragerc` used coverage's default configuration, measured all of `app`, and added no exclusions.
+
+**Command:**
+
+```bash
+COVERAGE_FILE=/tmp/leadgen-cp01r-coverage-config-final.data \
+DATABASE_URL='sqlite:////tmp/leadgen-cp01r-coverage-config-final.db' \
+  /tmp/leadgen-cp01r-venv/bin/python -m pytest tests/ -q \
+  --cov=app --cov-report=term --cov-fail-under=80 --cov-config=.coveragerc
+```
+
+**REMAINS_BLOCKED** — exit 1 at the unchanged threshold: **287 passed, 22 warnings; 4,890 statements, 1,965 missing, 59.82%**. The prior exact count was 2,925 covered / 4,890 total. Deferred files listed in the CP-01 coverage analysis contain 979 of the missing statements; covering every other missing statement would produce at most 3,911/4,890 = **79.98%**. Reaching 80% therefore requires broad coverage expansion into deferred/out-of-MVP code; per scope, testing stopped here. No threshold reduction, app exclusion, or dummy test was added.
+
+### 2. Ruff and format policy / regression comparison
+
+The workflow's scope is explicitly whole `app tests`, not changed-files-only. CP-01R made no edits under either directory. The current run remains **328 Ruff findings** and **69 files that would be reformatted**; the CP-01 comparison to `origin/master` was 330 findings / 71 files and found zero new findings. No mass-fix was applied.
+
+For completeness, the CP-01R-edited Alembic/Python migration-helper files (outside CI's Ruff target) were also compared with their CP-01 baseline using Ruff 0.16.9: **18 baseline findings, 17 current, zero introduced diagnostic identities**. Formatter output lists the same five already-unformatted files before and after; no additional file became unformatted. The migration helper and scripts remain outside the CI lint/format scope. `git diff --check` passes.
+
+### 3. SQLite migrations and schema assertions
+
+Revision 002 now adds/drops `leads.search_job_id` inside Alembic batch operations, keeps the nullable integer FK and index, and names the FK with PostgreSQL's conventional `leads_search_job_id_fkey` name. After the 002 repair advanced the fresh SQLite run, it exposed the same unsupported FK-column ALTER at revision 004, so that nullable `landing_pages.generation_id` FK also uses batch operations. Revisions 005/006 use batch operations to create/drop their existing named unique constraints, which otherwise use unsupported SQLite constraint ALTERs. These are the smallest additional portability changes needed for the full chain; they preserve the constraint/index names and logical schema on PostgreSQL, while SQLite uses Alembic's table-copy path.
+
+`scripts/check_migrations.py` previously created a second SQLite temp file while Alembic migrated the URL for a different file. It now points Alembic and schema checks at the same database, asserts the new nullable columns, foreign keys, indexes and `foreign_key_check`, and creates a revision-001 database with a lead and search job before upgrading it to head. The existing-row check verifies data preservation, assigns a valid new FK, and confirms SQLite rejects a missing job. The shell checker now reports the current head accurately and includes `api_keys` in the table list.
+
+**Fresh + existing SQLite check:**
+
+```bash
+PATH="/tmp/leadgen-cp01r-venv/bin:$PATH" \
+  /tmp/leadgen-cp01r-venv/bin/python scripts/check_migrations.py
+```
+
+**PASS** — `SQLITE MIGRATION CHAIN VERIFICATION PASSED`; 14 tables present; revision 002/004 nullable-column, FK, and index assertions pass; downgrade one revision, re-upgrade, single-head check, full downgrade to base, full upgrade to head, and existing revision-001-with-data upgrade all pass. Three pre-existing noncritical expected-index warnings remain for `ix_outreach_events_lead_id`, `ix_outreach_events_message_id`, and `ix_outreach_messages_lead_id`.
+
+**Shell-chain check:**
+
+```bash
+PATH="/tmp/leadgen-cp01r-venv/bin:$PATH" bash scripts/check_migrations.sh
+```
+
+**PASS** — revision `007 (head)`, all 14 tables including `api_keys`, unique constraint and `ix_leads_search_job_id` checks, one-step downgrade and re-upgrade. The script retains warnings for unrelated indexes that its existing SQLite check treats as nonfatal.
+
+**PostgreSQL offline DDL-generation checks (not a live DB test):**
+
+```bash
+DATABASE_URL='postgresql+psycopg://leadgen:leadgen@127.0.0.1:5432/leadgen' \
+PATH="/tmp/leadgen-cp01r-venv/bin:$PATH" \
+  alembic -c alembic.ini upgrade head --sql
+
+DATABASE_URL='postgresql+psycopg://leadgen:leadgen@127.0.0.1:5432/leadgen' \
+PATH="/tmp/leadgen-cp01r-venv/bin:$PATH" \
+  alembic -c alembic.ini downgrade 007:base --sql
+```
+
+Both exit 0 with the PostgreSQL dialect; generated SQL uses `ALTER TABLE ... ADD/DROP COLUMN` and named `ADD/DROP CONSTRAINT` statements. This confirms SQL rendering only and does **not** replace the blocked live PostgreSQL validation.
+
+### 4. PostgreSQL and Docker availability
+
+**EXTERNAL_BLOCKED evidence:** `docker`, `psql`, and `pg_isready` are not installed; `DATABASE_URL` and `POSTGRES_URL` are unset. A TCP probe to `127.0.0.1:5432` returned `ConnectionRefusedError: [Errno 111] Connection refused`. A live attempt with the repository's test URL also failed while running `alembic upgrade head` at the SQLAlchemy connection step. No PostgreSQL integration test was run and SQLite was not substituted.
+
+```bash
+PATH="/tmp/leadgen-cp01r-venv/bin:$PATH" \
+DATABASE_URL='sqlite:////tmp/leadgen-cp01r-local-validate-final.db' \
+  bash scripts/local_validate_mvp.sh
+```
+
+**EXTERNAL_BLOCKED** — exit 1: `[LOCAL-VALIDATE] FAILED: docker is not installed`. The script stopped at preflight; its compile, focused, and full-test steps were run separately as recorded below.
+
+```bash
+CLEANUP_ON_EXIT=0 PATH="/tmp/leadgen-cp01r-venv/bin:$PATH" \
+  bash scripts/smoke_mvp_pipeline_strict.sh
+```
+
+**EXTERNAL_BLOCKED** — exit 127 at Compose preflight: `docker: command not found`. No services or containers were started; no infrastructure was added.
+
+### 5. Starlette/FastAPI security remediation
+
+The CP-01 audit found 14 advisory rows / seven distinct Starlette CVEs on transitive `starlette==0.41.3`. The fixes span Starlette 0.47.2, 0.49.1, 1.0.1, 1.1.0, 1.3.0, and 1.3.1; Starlette 1.3.1 is the lowest candidate satisfying the final identified fix. Official FastAPI release notes first add Starlette 1.x support in 0.133.0; PyPI metadata for FastAPI 0.133.1 accepts `starlette>=0.40.0` without an upper bound, and Starlette 1.3.1 requires Python >=3.10. The smallest compatible patch-line candidate was therefore pinned:
+
+```text
+fastapi==0.133.1
+starlette==1.3.1
+```
+
+Sources: [FastAPI release notes](https://fastapi.tiangolo.com/release-notes/), [FastAPI 0.133.1 metadata](https://pypi.org/pypi/fastapi/0.133.1/json), [Starlette 1.3.1 metadata](https://pypi.org/pypi/starlette/1.3.1/json).
+
+FastAPI 0.132+ also defaults to strict JSON `Content-Type` handling; the existing webhook/E2E JSON requests use `json=` and passed on the upgraded versions. The app has no `TemplateResponse`, lifespan event-handler, or `on_event` use found in the compatibility search. `pip check` reports no broken requirements. The upgraded Starlette TestClient emits deprecation warnings for the existing HTTPX-based test client and per-request cookies; tests pass and the warning-producing test setup was not broadened into unrelated dependency changes.
+
+**Final requirements audit:**
+
+```bash
+/tmp/leadgen-cp01-security-venv/bin/pip-audit -r requirements.txt
+```
+
+**PASS** — exit 0: `No known vulnerabilities found`. No unresolved HIGH/CRITICAL runtime dependency vulnerability is reported by the final audit.
+
+**Relevant security tests:**
+
+```bash
+DATABASE_URL='sqlite:////tmp/leadgen-cp01r-security-tests-final.db' \
+  /tmp/leadgen-cp01r-venv/bin/python -m pytest \
+  tests/test_admin_message_approval_security.py -v
+
+DATABASE_URL='sqlite:////tmp/leadgen-cp01r-security-tests-final.db' \
+  /tmp/leadgen-cp01r-venv/bin/python -m pytest \
+  tests/test_phase06_comprehensive.py \
+  -k 'WebhookSignature or CSRFPhase06' -v
+```
+
+**PASS** — 6 admin message-approval security tests and 10 webhook-signature/CSRF tests passed. Bandit remains a baseline-only result: `bandit -r app -f json -o /tmp/leadgen-cp01r-bandit-final.json` exits 1 with the same 11 findings as master (1 HIGH, 10 LOW, no MEDIUM). The HIGH is the existing MD5-based deterministic CSV source ID; no application source was changed in CP-01R. The workflow's TruffleHog command still does not perform a filesystem scan: its installed Python CLI rejects the `filesystem` subcommand/options. These baseline static-scan limitations are recorded, not described as resolved by the dependency audit.
+
+### 6. Full, focused, and canonical MVP tests
+
+The final test environment was Python 3.11.2, pytest 9.1.1, FastAPI 0.133.1, Starlette 1.3.1, and Pydantic 2.10.3.
+
+**Full suite:**
+
+```bash
+DATABASE_URL='sqlite:////tmp/leadgen-cp01r-full-final.db' \
+  /tmp/leadgen-cp01r-venv/bin/python -m pytest tests/ -q -ra
+```
+
+**PASS** — 287 passed, 22 warnings in 2.22s. Warnings include existing Pydantic/SQLAlchemy teardown warnings plus Starlette TestClient deprecations noted above.
+
+**Focused stabilization/E2E/recovery/security suite:**
+
+```bash
+DATABASE_URL='sqlite:////tmp/leadgen-cp01r-focused-final2.db' \
+  /tmp/leadgen-cp01r-venv/bin/python -m pytest \
+  tests/test_mvp_pipeline_e2e.py \
+  tests/test_mvp_idempotency.py \
+  tests/test_admin_recovery.py \
+  tests/test_admin_message_approval_security.py -v
+```
+
+**PASS** — 18 passed, 21 warnings in 1.23s. `test_real_worker_mvp_pipeline` executes actual generation and publication workers, authenticated/CSRF-protected landing approval, message approval, outbound send, inbound WhatsApp webhook, lead stage `replied`, and a repeated inbound event returning `changed: 0` with no duplicate row. The focused suite also verifies repeated sends/publishes, generation/publication failure states, terminal policy-blocked messages, retry/recovery guards, POST-only message approval, auth, and CSRF.
+
+**Compile check:**
+
+```bash
+/tmp/leadgen-cp01r-venv/bin/python -m compileall app -q
+```
+
+**PASS** — exit 0.
+
+### 7. CP-01R final disposition
+
+Resolved within scope: SQLite migration portability and schema assertions; Starlette dependency remediation/audit; canonical MVP, idempotency, recovery, webhook-signature, CSRF, and message-approval security coverage. **REMAINS_BLOCKED:** the 80% coverage gate and repository-wide Ruff/format CI gates. **EXTERNAL_BLOCKED:** live PostgreSQL integration and Docker-backed validation. Bandit/secret-scan findings remain the documented master baseline/tooling limitation. Overall CP-01R remains **BLOCKED**; PR #2 and PR #3 remain open and unmerged, the branch was not force-pushed, and CP-02 was not started.

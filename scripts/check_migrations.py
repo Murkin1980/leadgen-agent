@@ -11,7 +11,6 @@ import os
 import sys
 import subprocess
 import tempfile
-import urllib.parse
 
 EXPECTED_TABLES = [
     "search_jobs",
@@ -50,7 +49,41 @@ def run_cmd(cmd: list[str], env: dict | None = None) -> tuple[bool, str]:
     return result.returncode == 0, (result.stdout + result.stderr).strip()
 
 
-def check_sqlite(db_url: str) -> int:
+def _assert_sqlite_schema(conn) -> None:
+    """Assert the migrated relationships and indexes affected by batch DDL."""
+    cursor = conn.cursor()
+    relations = (
+        ("leads", "search_job_id", "INTEGER", "search_jobs"),
+        ("deployments", "job_id", "INTEGER", "search_jobs"),
+        ("landing_pages", "generation_id", "VARCHAR(50)", "content_generations"),
+    )
+    for table, column, data_type, target in relations:
+        cursor.execute(f'PRAGMA table_info("{table}")')
+        columns = {row[1]: row for row in cursor.fetchall()}
+        info = columns.get(column)
+        if info is None or info[2].upper() != data_type or info[3] != 0:
+            raise RuntimeError(f"{table}.{column} must be nullable {data_type}")
+        cursor.execute(f'PRAGMA foreign_key_list("{table}")')
+        if not any(
+            row[2] == target and row[3] == column and row[4] == "id"
+            for row in cursor.fetchall()
+        ):
+            raise RuntimeError(f"foreign key {table}.{column} -> {target}.id is missing")
+
+    for table, index in (
+        ("leads", "ix_leads_search_job_id"),
+        ("deployments", "ix_deployments_job_id"),
+    ):
+        cursor.execute(f'PRAGMA index_list("{table}")')
+        if not any(row[1] == index for row in cursor.fetchall()):
+            raise RuntimeError(f"index {index} on {table} is missing")
+
+    cursor.execute("PRAGMA foreign_key_check")
+    if cursor.fetchall():
+        raise RuntimeError("SQLite foreign_key_check found violations")
+
+
+def check_sqlite() -> int:
     """Run migration checks against a temporary SQLite database."""
     import sqlite3
 
@@ -58,7 +91,7 @@ def check_sqlite(db_url: str) -> int:
         db_path = f.name
 
     env = os.environ.copy()
-    env["DATABASE_URL"] = db_url
+    env["DATABASE_URL"] = f"sqlite:///{db_path}"
 
     try:
         # Upgrade
@@ -69,8 +102,8 @@ def check_sqlite(db_url: str) -> int:
             return 1
         print("   OK")
 
-        # Table check
-        print("\n2. Verifying tables...")
+        # Table and schema check
+        print("\n2. Verifying tables and migration schema...")
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -81,6 +114,8 @@ def check_sqlite(db_url: str) -> int:
             conn.close()
             return 1
         print(f"   OK: {len(EXPECTED_TABLES)} tables present")
+        _assert_sqlite_schema(conn)
+        print("   OK: revision 002/004 columns, foreign keys, and indexes")
 
         # Unique constraint check
         print("\n3. Checking unique constraints...")
@@ -155,6 +190,72 @@ def check_sqlite(db_url: str) -> int:
             print(f"   FAILED: {out[:300]}")
             return 1
         print("   OK")
+
+        # Existing database upgrade path with data already present at revision 001.
+        print("\n10. Existing revision-001 SQLite database upgrade...")
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            existing_db_path = f.name
+        existing_env = os.environ.copy()
+        existing_env["DATABASE_URL"] = f"sqlite:///{existing_db_path}"
+        try:
+            ok, out = run_cmd(
+                ["alembic", "-c", "alembic.ini", "upgrade", "001"], env=existing_env
+            )
+            if not ok:
+                print(f"   FAILED creating revision-001 database: {out[:500]}")
+                return 1
+
+            with sqlite3.connect(existing_db_path) as existing_conn:
+                cursor = existing_conn.cursor()
+                cursor.execute(
+                    "INSERT INTO search_jobs (city, category) VALUES (?, ?)",
+                    ("Almaty", "migration-fixture"),
+                )
+                job_id = cursor.lastrowid
+                cursor.execute(
+                    "INSERT INTO leads (name) VALUES (?)", ("existing migration lead",)
+                )
+                lead_id = cursor.lastrowid
+
+            ok, out = run_cmd(
+                ["alembic", "-c", "alembic.ini", "upgrade", "head"], env=existing_env
+            )
+            if not ok:
+                print(f"   FAILED upgrading existing database: {out[:500]}")
+                return 1
+
+            with sqlite3.connect(existing_db_path) as existing_conn:
+                _assert_sqlite_schema(existing_conn)
+                existing_conn.execute("PRAGMA foreign_keys = ON")
+                cursor = existing_conn.cursor()
+                row = cursor.execute(
+                    "SELECT name, search_job_id FROM leads WHERE id = ?", (lead_id,)
+                ).fetchone()
+                if row != ("existing migration lead", None):
+                    raise RuntimeError(f"existing lead data changed during upgrade: {row}")
+                cursor.execute(
+                    "UPDATE leads SET search_job_id = ? WHERE id = ?", (job_id, lead_id)
+                )
+                existing_conn.commit()
+                try:
+                    cursor.execute(
+                        "UPDATE leads SET search_job_id = -1 WHERE id = ?", (lead_id,)
+                    )
+                except sqlite3.IntegrityError:
+                    existing_conn.rollback()
+                else:
+                    raise RuntimeError("search_job_id foreign key accepted a missing job")
+                preserved = cursor.execute(
+                    "SELECT name, search_job_id FROM leads WHERE id = ?", (lead_id,)
+                ).fetchone()
+                if preserved != ("existing migration lead", job_id):
+                    raise RuntimeError(
+                        f"existing lead relationship was not preserved: {preserved}"
+                    )
+        finally:
+            if os.path.exists(existing_db_path):
+                os.unlink(existing_db_path)
+        print("   OK: existing data preserved; nullable FK enforcement verified")
 
         print("\n=== MIGRATION CHAIN VERIFICATION PASSED ===")
         return 0
@@ -285,13 +386,7 @@ def main() -> int:
         return check_postgres(db_url)
     else:
         print("Mode: SQLite (temporary file)")
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            db_path = f.name
-        try:
-            return check_sqlite(f"sqlite:///{db_path}")
-        finally:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
+        return check_sqlite()
 
 
 if __name__ == "__main__":

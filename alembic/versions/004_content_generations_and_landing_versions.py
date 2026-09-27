@@ -73,15 +73,18 @@ def upgrade() -> None:
         "landing_pages",
         sa.Column("current_version", sa.Integer(), nullable=False, server_default="0"),
     )
-    op.add_column(
-        "landing_pages",
-        sa.Column(
-            "generation_id",
-            sa.String(50),
-            sa.ForeignKey("content_generations.id"),
-            nullable=True,
-        ),
-    )
+    with op.batch_alter_table("landing_pages") as batch_op:
+        batch_op.add_column(
+            sa.Column(
+                "generation_id",
+                sa.String(50),
+                sa.ForeignKey(
+                    "content_generations.id",
+                    name="landing_pages_generation_id_fkey",
+                ),
+                nullable=True,
+            )
+        )
 
     op.create_table(
         "landing_page_versions",
@@ -114,7 +117,8 @@ def downgrade() -> None:
     op.drop_index("ix_landing_page_versions_lp_id")
     op.drop_table("landing_page_versions")
 
-    op.drop_column("landing_pages", "generation_id")
+    with op.batch_alter_table("landing_pages") as batch_op:
+        batch_op.drop_column("generation_id")
     op.drop_column("landing_pages", "current_version")
     op.drop_column("landing_pages", "approved_by")
     op.drop_column("landing_pages", "approved_at")

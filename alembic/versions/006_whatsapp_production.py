@@ -34,7 +34,10 @@ def upgrade() -> None:
     op.add_column("outreach_messages", sa.Column("attempt_count", sa.Integer(), nullable=False, server_default="0"))
     op.add_column("outreach_messages", sa.Column("next_retry_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("outreach_messages", sa.Column("retryable", sa.Boolean(), nullable=False, server_default=sa.text("false")))
-    op.create_unique_constraint("uq_outreach_message_idempotency", "outreach_messages", ["idempotency_key"])
+    with op.batch_alter_table("outreach_messages") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_outreach_message_idempotency", ["idempotency_key"]
+        )
 
     op.create_table(
         "whatsapp_templates",
@@ -75,7 +78,10 @@ def downgrade() -> None:
     op.drop_index("ix_inbound_messages_lead_id", table_name="inbound_messages")
     op.drop_table("inbound_messages")
     op.drop_table("whatsapp_templates")
-    op.drop_constraint("uq_outreach_message_idempotency", "outreach_messages", type_="unique")
+    with op.batch_alter_table("outreach_messages") as batch_op:
+        batch_op.drop_constraint(
+            "uq_outreach_message_idempotency", type_="unique"
+        )
     for column in ["retryable", "next_retry_at", "attempt_count", "idempotency_key", "is_template", "template_language", "template_name"]:
         op.drop_column("outreach_messages", column)
     for column in ["last_outbound_at", "service_window_expires_at", "last_inbound_at", "consent_notes", "consent_recorded_at", "consent_source", "consent_status", "contact_basis"]:
