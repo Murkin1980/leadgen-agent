@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Leadgen Agent logo</title>
+  <desc id="desc">Black and gold lead generation magnet with conversation lead and attracted contacts.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff0a5"/>
+      <stop offset=".18" stop-color="#ffd45c"/>
+      <stop offset=".48" stop-color="#f7a800"/>
+      <stop offset=".78" stop-color="#d77a00"/>
+      <stop offset="1" stop-color="#ffcc45"/>
+    </linearGradient>
+    <linearGradient id="black" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3a3a3a"/>
+      <stop offset=".42" stop-color="#151515"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000" flood-opacity=".22"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.2"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <!-- magnet -->
+    <path d="M170 206 H506 V340 H296 C237 340 190 388 190 446 V578 C190 637 237 684 296 684 H506 V818 H296 C163 818 56 711 56 578 V446 C56 313 163 206 296 206 Z"
+          fill="url(#black)" stroke="url(#gold)" stroke-width="16" stroke-linejoin="round"/>
+    <rect x="500" y="205" width="86" height="136" rx="20" fill="url(#gold)" stroke="#b96a00" stroke-width="8"/>
+    <rect x="500" y="683" width="86" height="136" rx="20" fill="url(#gold)" stroke="#b96a00" stroke-width="8"/>
+
+    <!-- chat lead -->
+    <path d="M310 368 H536 A46 46 0 0 1 582 414 V615 A46 46 0 0 1 536 661 H389 L345 699 V661 H310 A46 46 0 0 1 264 615 V414 A46 46 0 0 1 310 368 Z"
+          fill="url(#black)" stroke="url(#gold)" stroke-width="14"/>
+    <circle cx="423" cy="456" r="49" fill="url(#gold)" stroke="#ad6500" stroke-width="7"/>
+    <path d="M339 574 C339 519 376 491 423 491 C470 491 507 519 507 574 Z"
+          fill="url(#gold)" stroke="#ad6500" stroke-width="7"/>
+
+    <!-- attraction rays -->
+    <g fill="url(#gold)" stroke="#b96a00" stroke-width="5">
+      <rect x="597" y="350" width="125" height="26" rx="13" transform="rotate(-35 597 350)"/>
+      <rect x="603" y="406" width="112" height="26" rx="13" transform="rotate(-27 603 406)"/>
+      <rect x="611" y="490" width="146" height="28" rx="14" transform="rotate(-7 611 490)"/>
+      <rect x="603" y="588" width="113" height="26" rx="13" transform="rotate(27 603 588)"/>
+      <rect x="596" y="638" width="127" height="26" rx="13" transform="rotate(36 596 638)"/>
+    </g>
+
+    <!-- attracted contacts -->
+    <g>
+      <g transform="translate(724 277)">
+        <circle cx="56" cy="54" r="39" fill="url(#black)" stroke="url(#gold)" stroke-width="10"/>
+        <path d="M5 157 C5 105 28 81 56 81 C84 81 107 105 107 157 Z" fill="url(#black)" stroke="url(#gold)" stroke-width="10"/>
+      </g>
+      <g transform="translate(803 452)">
+        <circle cx="47" cy="47" r="34" fill="url(#black)" stroke="url(#gold)" stroke-width="9"/>
+        <path d="M4 139 C4 94 23 72 47 72 C71 72 90 94 90 139 Z" fill="url(#black)" stroke="url(#gold)" stroke-width="9"/>
+      </g>
+      <g transform="translate(704 655)">
+        <circle cx="52" cy="52" r="37" fill="url(#black)" stroke="url(#gold)" stroke-width="10"/>
+        <path d="M5 150 C5 101 26 77 52 77 C78 77 99 101 99 150 Z" fill="url(#black)" stroke="url(#gold)" stroke-width="10"/>
+      </g>
+    </g>
+
+    <!-- highlights -->
+    <path d="M189 230 H487" stroke="#fff3b5" stroke-opacity=".45" stroke-width="8" stroke-linecap="round"/>
+    <path d="M296 386 H516" stroke="#fff3b5" stroke-opacity=".24" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
