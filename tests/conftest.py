@@ -1,6 +1,7 @@
 import os
 
-os.environ["DATABASE_URL"] = "sqlite:///test.db"
+os.environ.setdefault("DATABASE_URL", "sqlite:///test.db")
+TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 os.environ["REDIS_URL"] = "redis://localhost:6379/15"
 os.environ["TEXT_GENERATOR_PROVIDER"] = "mock"
 os.environ["PUBLIC_BASE_URL"] = "http://localhost:8080"
@@ -37,20 +38,19 @@ from app.database import Base
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
-    engine = create_engine("sqlite:///test.db")
+    engine = create_engine(TEST_DATABASE_URL)
+    sqlite_path = engine.url.database if engine.dialect.name == "sqlite" else None
     Base.metadata.create_all(engine)
     yield
     Base.metadata.drop_all(engine)
     engine.dispose()
-    try:
-        os.remove("test.db")
-    except PermissionError:
-        pass
+    if sqlite_path and os.path.exists(sqlite_path):
+        os.remove(sqlite_path)
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///test.db")
+    engine = create_engine(TEST_DATABASE_URL)
     TestSession = sessionmaker(bind=engine)
     session = TestSession()
     yield session

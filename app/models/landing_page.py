@@ -11,6 +11,7 @@ class LandingStatus(str, enum.Enum):
     draft = "draft"
     needs_review = "needs_review"
     approved = "approved"
+    generated = "generated"
     rejected = "rejected"
     published = "published"
     deployed = "deployed"
@@ -35,9 +36,7 @@ class LandingPage(Base):
     profile_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     preview_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(50), default=LandingStatus.draft.value
-    )
+    status: Mapped[str] = mapped_column(String(50), default=LandingStatus.draft.value)
     review_status: Mapped[str] = mapped_column(
         String(50), default=ReviewStatus.draft.value
     )

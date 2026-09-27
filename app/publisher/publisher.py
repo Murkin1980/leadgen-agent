@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import shutil
-import tempfile
 from pathlib import Path
 
 from app.config import settings
@@ -33,6 +32,7 @@ def publish_site(slug: str) -> str:
         raise FileNotFoundError(f"Draft not found: {src}")
 
     tmp_dir = SITES_DIR / "public" / ".tmp" / slug
+    tmp_dir.parent.mkdir(parents=True, exist_ok=True)
 
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)

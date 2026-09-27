@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import uuid
+from typing import ClassVar
 
 from fastapi.testclient import TestClient
 
 from app.api import admin_recovery
 from app.main import app
-from app.models.campaign import CampaignStatus, MessageStatus, OutreachCampaign, OutreachMessage
+from app.models.campaign import (
+    CampaignStatus,
+    MessageStatus,
+    OutreachCampaign,
+    OutreachMessage,
+)
 from app.models.content_generation import ContentGeneration, ContentGenerationStatus
 from app.models.lead import Lead, LeadStatus
 from app.models.stage import LeadStage
@@ -14,7 +20,7 @@ from app.security import generate_csrf_token
 
 
 class FakeQueue:
-    calls: list[tuple[str, tuple, dict]] = []
+    calls: ClassVar[list[tuple[str, tuple, dict]]] = []
 
     def __init__(self, name: str, connection=None):
         self.name = name

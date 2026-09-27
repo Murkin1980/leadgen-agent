@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import secrets
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -40,17 +41,21 @@ def _button(action: str, csrf: str, label: str = "Повторить") -> str:
 
 
 @recovery_router.get("/recovery", response_class=HTMLResponse)
-def recovery_page(request: Request, db: Session = Depends(get_db)):
+def recovery_page(request: Request, db: Annotated[Session, Depends(get_db)]):
     """Show only failed MVP operations that have a safe manual retry path."""
     _require_auth(request)
     csrf = generate_csrf_token()
 
     generations = (
         db.query(ContentGeneration)
-        .filter(ContentGeneration.status.in_([
-            ContentGenerationStatus.failed.value,
-            ContentGenerationStatus.rejected.value,
-        ]))
+        .filter(
+            ContentGeneration.status.in_(
+                [
+                    ContentGenerationStatus.failed.value,
+                    ContentGenerationStatus.rejected.value,
+                ]
+            )
+        )
         .order_by(ContentGeneration.created_at.desc())
         .limit(50)
         .all()
@@ -102,7 +107,10 @@ def recovery_page(request: Request, db: Session = Depends(get_db)):
             "</tr>"
         )
 
-    table_rows = "".join(rows) or '<tr><td colspan="5">Нет операций, доступных для повтора.</td></tr>'
+    table_rows = (
+        "".join(rows)
+        or '<tr><td colspan="5">Нет операций, доступных для повтора.</td></tr>'
+    )
     return HTMLResponse(
         content=f"""<!DOCTYPE html>
 <html><head><title>Восстановление MVP</title>
@@ -124,12 +132,16 @@ a{{color:#2563eb}}
 def retry_generation(
     generation_id: str,
     request: Request,
+    db: Annotated[Session, Depends(get_db)],
     csrf_token: str = Form(""),
-    db: Session = Depends(get_db),
 ):
     _require_auth(request)
     _require_csrf(csrf_token)
-    generation = db.query(ContentGeneration).filter(ContentGeneration.id == generation_id).first()
+    generation = (
+        db.query(ContentGeneration)
+        .filter(ContentGeneration.id == generation_id)
+        .first()
+    )
     if not generation:
         raise HTTPException(status_code=404, detail="Generation not found")
     if generation.status not in {
@@ -142,7 +154,13 @@ def retry_generation(
     generation.error_message = None
     generation.started_at = None
     generation.completed_at = None
-    log_audit_event(db, "generation_retry_queued", "content_generation", generation_id, actor="admin")
+    log_audit_event(
+        db,
+        "generation_retry_queued",
+        "content_generation",
+        generation_id,
+        actor="admin",
+    )
     db.commit()
     Queue("generate_content", connection=redis_conn).enqueue(
         "app.workers.content_generator_worker.run_content_generator",
@@ -155,8 +173,8 @@ def retry_generation(
 def retry_publication(
     landing_id: str,
     request: Request,
+    db: Annotated[Session, Depends(get_db)],
     csrf_token: str = Form(""),
-    db: Session = Depends(get_db),
 ):
     _require_auth(request)
     _require_csrf(csrf_token)
@@ -167,14 +185,20 @@ def retry_publication(
         landing.status == LandingStatus.failed.value
         and landing.review_status == ReviewStatus.approved.value
     ):
-        raise HTTPException(status_code=409, detail="Landing publication is not retryable")
+        raise HTTPException(
+            status_code=409, detail="Landing publication is not retryable"
+        )
 
     lead = db.query(Lead).filter(Lead.id == landing.lead_id).first()
     if not lead or not lead.search_job_id:
-        raise HTTPException(status_code=409, detail="Landing has no source job for publication retry")
+        raise HTTPException(
+            status_code=409, detail="Landing has no source job for publication retry"
+        )
 
     landing.status = LandingStatus.approved.value
-    log_audit_event(db, "publication_retry_queued", "landing_page", landing_id, actor="admin")
+    log_audit_event(
+        db, "publication_retry_queued", "landing_page", landing_id, actor="admin"
+    )
     db.commit()
     Queue("publish", connection=redis_conn).enqueue(
         "app.workers.publisher_worker.run_publisher",
@@ -188,18 +212,15 @@ def retry_publication(
 def retry_message(
     message_id: str,
     request: Request,
+    db: Annotated[Session, Depends(get_db)],
     csrf_token: str = Form(""),
-    db: Session = Depends(get_db),
 ):
     _require_auth(request)
     _require_csrf(csrf_token)
     message = db.query(OutreachMessage).filter(OutreachMessage.id == message_id).first()
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
-    if not (
-        message.status == MessageStatus.failed.value
-        and message.retryable
-    ):
+    if not (message.status == MessageStatus.failed.value and message.retryable):
         raise HTTPException(status_code=409, detail="Message is not retryable")
 
     lead = db.query(Lead).filter(Lead.id == message.lead_id).first()
@@ -209,7 +230,9 @@ def retry_message(
     message.status = MessageStatus.queued.value
     message.error_message = None
     message.next_retry_at = None
-    log_audit_event(db, "message_retry_queued", "outreach_message", message_id, actor="admin")
+    log_audit_event(
+        db, "message_retry_queued", "outreach_message", message_id, actor="admin"
+    )
     db.commit()
     Queue("outreach_send", connection=redis_conn).enqueue(
         "app.workers.outreach_sender_worker.run_outreach_sender",

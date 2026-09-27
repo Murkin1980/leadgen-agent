@@ -3,10 +3,10 @@
 Unlike ``test_mvp_flow.py``, this test calls the real generation, publication,
 outreach and webhook code paths instead of manually assigning success states.
 """
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
@@ -23,18 +23,18 @@ from app.models.lead import Lead, LeadStatus
 from app.models.search_job import JobStatus, SearchJob
 from app.models.stage import LeadStage
 from app.models.whatsapp import InboundMessage
+from app.security import generate_csrf_token
 from app.workers.content_generator_worker import run_content_generator
 from app.workers.outreach_sender_worker import run_outreach_sender
 from app.workers.publisher_worker import run_publisher
 
-
 SANDBOX_PHONE = "+77000000001"
 
 
-def _patch_outreach_settings(mock_settings) -> None:
+def _patch_outreach_settings(mock_settings, sandbox_phone: str = SANDBOX_PHONE) -> None:
     mock_settings.outreach_enabled = True
     mock_settings.outreach_mode = "sandbox"
-    mock_settings.sandbox_allowlist = {SANDBOX_PHONE}
+    mock_settings.sandbox_allowlist = {sandbox_phone}
     mock_settings.outreach_timezone = "Asia/Almaty"
     mock_settings.outreach_quiet_hours_start = "00:00"
     mock_settings.outreach_quiet_hours_end = "00:00"
@@ -47,11 +47,12 @@ def _patch_outreach_settings(mock_settings) -> None:
 def test_real_worker_mvp_pipeline(db, tmp_path, monkeypatch):
     """One lead completes generation -> publish -> send -> inbound reply."""
     from app.landing import renderer
-    from app.publisher import publisher
     from app.outreach import service as outreach_service
+    from app.publisher import publisher
     from app.workers import outreach_sender_worker
 
     sites_dir = tmp_path / "sites"
+    sandbox_phone = f"+77{uuid.uuid4().int % 900_000_000 + 100_000_000}"
     monkeypatch.setattr(renderer, "SITES_DIR", sites_dir)
     monkeypatch.setattr(publisher, "SITES_DIR", sites_dir)
 
@@ -59,8 +60,8 @@ def test_real_worker_mvp_pipeline(db, tmp_path, monkeypatch):
         name="ТОО «Құрылыс Жиһаз»",
         city="Алматы",
         category="Мебель на заказ",
-        phone=SANDBOX_PHONE,
-        whatsapp=SANDBOX_PHONE,
+        phone=sandbox_phone,
+        whatsapp=sandbox_phone,
         slug=f"almaty-qurylys-zhihaz-{uuid.uuid4().hex[:6]}",
         status=LeadStatus.enriched.value,
         stage=LeadStage.new.value,
@@ -101,11 +102,17 @@ def test_real_worker_mvp_pipeline(db, tmp_path, monkeypatch):
     assert landing.review_status == ReviewStatus.needs_review.value
     assert landing.slug == lead.slug
 
-    landing.review_status = ReviewStatus.approved.value
-    landing.status = LandingStatus.approved.value
-    landing.approved_by = "integration-test"
-    landing.approved_at = datetime.now(timezone.utc)
-    db.commit()
+    landing_approval = TestClient(app).post(
+        f"/admin/landings/{landing.id}/approve",
+        data={"csrf_token": generate_csrf_token()},
+        cookies={"admin_auth": "testpass"},
+        follow_redirects=False,
+    )
+    assert landing_approval.status_code == 302
+    db.expire_all()
+    landing = db.query(LandingPage).filter_by(id=landing.id).one()
+    assert landing.review_status == ReviewStatus.approved.value
+    assert landing.approved_at is not None
 
     run_publisher([landing.id], job.id)
 
@@ -128,21 +135,31 @@ def test_real_worker_mvp_pipeline(db, tmp_path, monkeypatch):
         campaign_id=campaign.id,
         lead_id=lead.id,
         channel="whatsapp",
-        recipient=SANDBOX_PHONE,
+        recipient=sandbox_phone,
         body=f"Здравствуйте! Ваш тестовый лендинг: {landing.preview_url}",
-        status=MessageStatus.queued.value,
-        approved_by="integration-test",
-        approved_at=datetime.now(timezone.utc),
+        status=MessageStatus.needs_review.value,
         idempotency_key=f"mvp-e2e-{lead.id}",
     )
     db.add_all([campaign, message])
     db.commit()
 
+    message_approval = TestClient(app).post(
+        f"/admin/messages/{message.id}/approve",
+        data={"csrf_token": generate_csrf_token()},
+        cookies={"admin_auth": "testpass"},
+        follow_redirects=False,
+    )
+    assert message_approval.status_code == 303
+    db.expire_all()
+    message = db.query(OutreachMessage).filter_by(id=message.id).one()
+    assert message.status == MessageStatus.approved.value
+    assert message.approved_at is not None
+
     with monkeypatch.context() as patch:
         patch.setattr(outreach_service, "settings", type("Settings", (), {})())
         patch.setattr(outreach_sender_worker, "settings", type("Settings", (), {})())
-        _patch_outreach_settings(outreach_service.settings)
-        _patch_outreach_settings(outreach_sender_worker.settings)
+        _patch_outreach_settings(outreach_service.settings, sandbox_phone)
+        _patch_outreach_settings(outreach_sender_worker.settings, sandbox_phone)
         run_outreach_sender(message.id)
 
     db.expire_all()
@@ -159,7 +176,7 @@ def test_real_worker_mvp_pipeline(db, tmp_path, monkeypatch):
                             "messages": [
                                 {
                                     "id": f"wa-inbound-{uuid.uuid4().hex[:10]}",
-                                    "from": "77000000001",
+                                    "from": sandbox_phone.lstrip("+"),
                                     "type": "text",
                                     "text": {"body": "Интересно, расскажите подробнее"},
                                 }
@@ -183,4 +200,9 @@ def test_real_worker_mvp_pipeline(db, tmp_path, monkeypatch):
     duplicate = TestClient(app).post("/webhooks/whatsapp", json=payload)
     assert duplicate.status_code == 200
     assert duplicate.json()["changed"] == 0
-    assert db.query(InboundMessage).filter_by(provider_message_id=inbound.provider_message_id).count() == 1
+    assert (
+        db.query(InboundMessage)
+        .filter_by(provider_message_id=inbound.provider_message_id)
+        .count()
+        == 1
+    )

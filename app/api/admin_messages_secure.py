@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import secrets
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -40,9 +41,14 @@ def _require_csrf(token: str) -> None:
 
 
 @router.get("/messages", response_class=HTMLResponse)
-def messages_page(request: Request, db: Session = Depends(get_db)):
+def messages_page(request: Request, db: Annotated[Session, Depends(get_db)]):
     _require_auth(request)
-    messages = db.query(OutreachMessage).order_by(OutreachMessage.created_at.desc()).limit(100).all()
+    messages = (
+        db.query(OutreachMessage)
+        .order_by(OutreachMessage.created_at.desc())
+        .limit(100)
+        .all()
+    )
     csrf = generate_csrf_token()
     rows: list[str] = []
     for message in messages:
@@ -61,7 +67,7 @@ def messages_page(request: Request, db: Session = Depends(get_db)):
         )
     page = f"""<!doctype html><html><head><meta charset="utf-8"><title>Messages</title>
 <style>body{{font-family:system-ui;margin:20px}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:7px;text-align:left}}th{{background:#1f2937;color:#fff}}pre{{white-space:pre-wrap;margin:0}}</style></head><body>
-{_NAV}<h2>Сообщения на одобрение</h2><table><tr><th>ID</th><th>Lead</th><th>Канал</th><th>Текст</th><th>Статус</th><th>Действие</th></tr>{''.join(rows)}</table></body></html>"""
+{_NAV}<h2>Сообщения на одобрение</h2><table><tr><th>ID</th><th>Lead</th><th>Канал</th><th>Текст</th><th>Статус</th><th>Действие</th></tr>{"".join(rows)}</table></body></html>"""
     return HTMLResponse(page)
 
 
@@ -75,8 +81,8 @@ def reject_get_approval(message_id: str, request: Request):
 def approve_message(
     message_id: str,
     request: Request,
+    db: Annotated[Session, Depends(get_db)],
     csrf_token: str = Form(""),
-    db: Session = Depends(get_db),
 ):
     _require_auth(request)
     _require_csrf(csrf_token)
@@ -84,11 +90,15 @@ def approve_message(
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
     if message.status != MessageStatus.needs_review.value:
-        raise HTTPException(status_code=409, detail=f"Cannot approve message in status {message.status}")
+        raise HTTPException(
+            status_code=409, detail=f"Cannot approve message in status {message.status}"
+        )
 
     message.status = MessageStatus.approved.value
     message.approved_by = settings.admin_username
     message.approved_at = datetime.now(timezone.utc)
-    log_audit_event(db, "message_approved", "outreach_message", message_id, actor="admin")
+    log_audit_event(
+        db, "message_approved", "outreach_message", message_id, actor="admin"
+    )
     db.commit()
     return RedirectResponse(url="/admin/messages", status_code=303)

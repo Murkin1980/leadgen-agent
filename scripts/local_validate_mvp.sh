@@ -16,7 +16,7 @@ python -m compileall app -q
 log "2/6 Run stabilization tests"
 python -m pytest \
   tests/test_mvp_pipeline_e2e.py \
-  tests/test_mvp_retry_safety.py \
+  tests/test_mvp_idempotency.py \
   tests/test_admin_recovery.py \
   tests/test_admin_message_approval_security.py \
   -v

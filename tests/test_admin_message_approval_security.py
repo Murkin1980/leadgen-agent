@@ -7,7 +7,6 @@ from app.models.campaign import MessageStatus, OutreachCampaign, OutreachMessage
 from app.models.lead import Lead
 from app.security import generate_csrf_token
 
-
 AUTH = {"admin_auth": "testpass"}
 
 
@@ -44,6 +43,18 @@ def test_messages_page_uses_post_form(db):
     assert f'action="/admin/messages/{message.id}/approve"' in response.text
     assert 'method="post"' in response.text
     assert f'href="/admin/messages/{message.id}/approve' not in response.text
+
+
+def test_post_approval_requires_auth(db):
+    message = _message(db)
+    response = TestClient(app).post(
+        f"/admin/messages/{message.id}/approve",
+        data={"csrf_token": generate_csrf_token()},
+        follow_redirects=False,
+    )
+    assert response.status_code == 401
+    db.refresh(message)
+    assert message.status == MessageStatus.needs_review.value
 
 
 def test_get_approval_is_rejected(db):

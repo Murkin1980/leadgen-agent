@@ -3,13 +3,18 @@
 These tests intentionally use the existing database, workers and state guards.
 No generalized idempotency subsystem is introduced.
 """
+
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 
-from app.models.campaign import CampaignStatus, MessageStatus, OutreachCampaign, OutreachMessage
+from app.models.campaign import (
+    CampaignStatus,
+    MessageStatus,
+    OutreachCampaign,
+    OutreachMessage,
+)
 from app.models.content_generation import ContentGeneration, ContentGenerationStatus
 from app.models.landing_page import LandingPage, LandingStatus, ReviewStatus
 from app.models.lead import Lead, LeadStatus
@@ -19,7 +24,6 @@ from app.outreach.provider import SendResult
 from app.workers.content_generator_worker import run_content_generator
 from app.workers.outreach_sender_worker import run_outreach_sender
 from app.workers.publisher_worker import run_publisher
-
 
 SANDBOX_PHONE = "+77000000001"
 
@@ -138,7 +142,9 @@ def test_sender_second_run_does_not_call_provider_twice(db, monkeypatch):
     _allow_sandbox(worker_settings)
     monkeypatch.setattr(outreach_service, "settings", service_settings)
     monkeypatch.setattr(outreach_sender_worker, "settings", worker_settings)
-    monkeypatch.setattr(outreach_sender_worker, "create_outreach_provider", lambda: CountingProvider())
+    monkeypatch.setattr(
+        outreach_sender_worker, "create_outreach_provider", lambda: CountingProvider()
+    )
 
     run_outreach_sender(message.id)
     run_outreach_sender(message.id)
@@ -232,8 +238,19 @@ def test_publication_failure_does_not_mark_lead_published(db, tmp_path, monkeypa
     assert not (sites_dir / "public" / landing.slug).exists()
 
 
-def test_generation_failure_is_visible_and_does_not_create_landing(db):
-    """An invalid provider produces a failed generation with a readable error."""
+def test_generation_failure_is_visible_and_does_not_create_landing(db, monkeypatch):
+    """A provider error produces a failed generation with a readable error."""
+    from app.workers import content_generator_worker
+
+    class FailingAdapter:
+        def generate(self, context):
+            raise RuntimeError("simulated provider failure")
+
+    monkeypatch.setattr(
+        content_generator_worker,
+        "create_text_generator",
+        lambda provider: FailingAdapter(),
+    )
     lead = Lead(
         name="Generation failure",
         city="Алматы",
@@ -246,7 +263,7 @@ def test_generation_failure_is_visible_and_does_not_create_landing(db):
     generation = ContentGeneration(
         id=f"gen_{uuid.uuid4().hex[:10]}",
         lead_id=lead.id,
-        provider="provider-that-does-not-exist",
+        provider="template",
         prompt_version="v1",
         status=ContentGenerationStatus.queued.value,
         language="ru",
@@ -259,7 +276,7 @@ def test_generation_failure_is_visible_and_does_not_create_landing(db):
     db.expire_all()
     generation = db.query(ContentGeneration).filter_by(id=generation.id).one()
     assert generation.status == ContentGenerationStatus.failed.value
-    assert generation.error_message
+    assert "simulated provider failure" in generation.error_message
     assert generation.landing_page_id is None
     assert db.query(LandingPage).filter_by(generation_id=generation.id).count() == 0
 
