@@ -19,6 +19,7 @@
 
 - `docker --version`: **unavailable** — Docker CLI not installed.
 - `docker compose version`: **unavailable** — Docker CLI not installed.
+- Rechecked at expected head `739dd996b127a4e351908311313556c622800aad`: `docker --version`, `docker compose version`, and `docker info` each exited **127** with `/bin/bash: docker: command not found`. Because the CLI is absent, daemon status cannot be queried; this is not evidence of an installed Docker Desktop with a stopped daemon.
 - `docker compose config`: exit **127**, `/bin/bash: docker: command not found`.
 - Repository default Compose services are `postgres`, `redis`, `migrate`, `api`, `worker`, and `preview`. The documented MVP path is `cp .env.mvp.example .env` followed by `docker compose up --build`; the strict smoke's explicit startup command is `docker compose up -d --build postgres redis migrate api worker preview`.
 - Neither startup command could be run. No containers were started, no service was replaced by a mock, and no inter-service health/connectivity claim is made.
