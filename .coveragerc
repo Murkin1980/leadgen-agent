@@ -1,0 +1,32 @@
+[run]
+source = app
+omit =
+    # Deferred production surfaces explicitly documented in SIMPLICITY_REVIEW.md.
+    */app/api/production_routes.py
+    */app/api_keys.py
+    */app/backup.py
+    */app/metrics.py
+    */app/pilot.py
+    */app/retention.py
+    */app/models/api_key.py
+    */app/outreach/dead_letter.py
+    */app/outreach/inbox.py
+    */app/outreach/template_sync.py
+    # Optional providers or endpoints outside the CSV/mock + WhatsApp MVP path.
+    */app/collector/adapters/two_gis.py
+    */app/generation/openai.py
+    */app/generation/usage.py
+    */app/outreach/webhook_handler.py
+    # Deployment is postponed; only local static publishing is in the MVP flow.
+    */app/deployment/__init__.py
+    */app/deployment/adapter.py
+    */app/deployment/base.py
+    */app/deployment/cloudflare.py
+    */app/deployment/mock.py
+    */app/models/deployment.py
+    */app/schemas/deployment.py
+    */app/workers/deployer_worker.py
+    # Not part of runtime imports: typing-only protocol and unused structured logger.
+    */app/collector/adapter.py
+    */app/logging/__init__.py
+    */app/logging/structured.py

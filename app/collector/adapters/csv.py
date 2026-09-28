@@ -55,7 +55,10 @@ class CsvCollectorAdapter:
 
         source_id = row.get("source_id", "")
         if not source_id:
-            source_id = hashlib.md5(f"{name}:{row.get('city', '')}".encode()).hexdigest()[:12]
+            # Stable import identity only; this digest is not a security primitive.
+            source_id = hashlib.md5(
+                f"{name}:{row.get('city', '')}".encode(), usedforsecurity=False
+            ).hexdigest()[:12]
 
         return CollectedCompany(
             source_id=source_id,

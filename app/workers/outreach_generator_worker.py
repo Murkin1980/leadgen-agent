@@ -1,12 +1,16 @@
-import json
 import logging
-import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models.campaign import OutreachCampaign, OutreachMessage, MessageStatus, CampaignStatus
+from app.models.campaign import (
+    CampaignStatus,
+    MessageStatus,
+    OutreachCampaign,
+    OutreachMessage,
+)
 from app.models.lead import Lead
 from app.outreach.message_generator import MessageContext, generate_messages
 
@@ -16,9 +20,11 @@ logger = logging.getLogger(__name__)
 def run_outreach_generator(campaign_id: str) -> None:
     db: Session = SessionLocal()
     try:
-        campaign = db.query(OutreachCampaign).filter(
-            OutreachCampaign.id == campaign_id
-        ).first()
+        campaign = (
+            db.query(OutreachCampaign)
+            .filter(OutreachCampaign.id == campaign_id)
+            .first()
+        )
         if not campaign:
             logger.error("Campaign %s not found", campaign_id)
             return
@@ -92,15 +98,21 @@ def run_outreach_generator(campaign_id: str) -> None:
         db.commit()
 
     except Exception as exc:
-        logger.exception("Outreach generator failed for campaign %s", campaign_id)
+        logger.exception(
+            "Outreach generator failed for campaign %s (%s)",
+            campaign_id,
+            type(exc).__name__,
+        )
         try:
-            campaign = db.query(OutreachCampaign).filter(
-                OutreachCampaign.id == campaign_id
-            ).first()
+            campaign = (
+                db.query(OutreachCampaign)
+                .filter(OutreachCampaign.id == campaign_id)
+                .first()
+            )
             if campaign:
                 campaign.status = CampaignStatus.failed.value
                 db.commit()
-        except Exception:
+        except SQLAlchemyError:
             db.rollback()
     finally:
         db.close()
@@ -108,7 +120,8 @@ def run_outreach_generator(campaign_id: str) -> None:
 
 def _get_recipient(lead: Lead, channel: str) -> str:
     if channel == "whatsapp":
-        return lead.whatsapp or lead.phone or ""
+        # Enrichment stores a wa.me URL in lead.whatsapp; send APIs need the phone.
+        return lead.phone or lead.whatsapp or ""
     elif channel == "email":
         return lead.email or ""
     elif channel == "telegram":

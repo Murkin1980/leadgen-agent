@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -21,13 +23,25 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install ruff
+          pip install ruff==0.16.9
 
-      - name: Run Ruff
-        run: ruff check app tests
+      - name: Report historical Ruff debt (non-blocking)
+        run: ruff check app tests --output-format concise
+        continue-on-error: true
 
-      - name: Check formatting
+      - name: Report historical format debt (non-blocking)
         run: ruff format --check app tests
+        continue-on-error: true
+
+      - name: Check regression-gate tooling
+        run: |
+          ruff check scripts/check_quality_regressions.py
+          ruff format --check scripts/check_quality_regressions.py
+
+      - name: Block Ruff and format regressions on changed app/tests lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/check_quality_regressions.py "$BASE_SHA"
 
       - name: Compile check
         run: python -m compileall app -q
@@ -247,21 +261,53 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pip-audit bandit
+          pip install pip-audit bandit detect-secrets==1.5.0
 
       - name: Run pip-audit
         run: pip-audit -r requirements.txt
 
-      - name: Run Bandit
-        run: bandit -r app -f json -o bandit-report.json || true
+      - name: Run full Bandit report (historical LOW findings are non-blocking)
+        run: bandit -r app -f json -o "$RUNNER_TEMP/bandit-report.json"
+        continue-on-error: true
 
-      - name: Secret scan
+      - name: Block HIGH Bandit findings
+        run: bandit -r app --severity-level high
+
+      - name: Secret scan (block unreviewed findings)
+        shell: bash
         run: |
-          pip install trufflehog
-          trufflehog filesystem . --no-verification --fail || true
+          set -euo pipefail
+          report="$(mktemp)"
+          mapfile -d '' files < <(git ls-files -z --cached --others --exclude-standard)
+          if detect-secrets-hook --no-verify --json --baseline .secrets.baseline --exclude-files '(^|/)[.]secrets[.]baseline$' "${files[@]}" > "$report"; then
+            scan_status=0
+          else
+            scan_status=$?
+          fi
+          python - "$report" "$scan_status" <<'PY'
+          import json
+          import sys
+
+          report = open(sys.argv[1], encoding="utf-8").read()
+          status = int(sys.argv[2])
+          results = json.loads(report).get("results", {}) if report.strip() else {}
+          findings = [
+              (path, item.get("line_number"), item.get("type", "unknown"))
+              for path, items in results.items()
+              for item in items
+          ]
+          if findings:
+              print(f"Secret scan found {len(findings)} unreviewed candidate(s):")
+              for path, line, kind in findings:
+                  print(f"{path}:{line}: {kind}")
+          else:
+              print("Secret scan passed: no unreviewed candidates.")
+          sys.exit(status)
+          PY
 
       - name: Upload Bandit report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bandit-report
-          path: bandit-report.json
+          path: ${{ runner.temp }}/bandit-report.json
